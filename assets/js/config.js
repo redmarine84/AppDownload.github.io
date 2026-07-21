@@ -9,7 +9,7 @@ window.DOWNLOAD_PORTAL_CONFIG = {
   pageTitle: "CodeVault Downloads",
   githubOwner: "redmarine84",
   githubRepository: "AppDownload.github.io",
-  defaultBranch: "master",
+  defaultBranch: "main",
   supportEmail: "redhead_usmc@yahoo.com",
   aboutText:
     "This download portal contains independently developed Windows applications, utilities, reporting tools, and workflow solutions. Each release is hosted through GitHub Releases for dependable delivery and transparent version history.",
