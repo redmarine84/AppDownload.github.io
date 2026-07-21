@@ -18,10 +18,10 @@ Use a public repository for the website and releases. GitHub Pages can publish t
 2. Configure the site
 Open `assets/js/config.js` and change:
 ```js
-githubOwner: "YOUR_GITHUB_USERNAME",
-githubRepository: "YOUR_REPOSITORY_NAME",
-defaultBranch: "main",
-supportEmail: "YOUR_EMAIL_ADDRESS"
+githubOwner: "redmarine84",
+githubRepository: "redmarine84/AppDownload.github.io",
+defaultBranch: "master",
+supportEmail: "redhead_usmc@yahoo.com"
 ```
 You may also change the brand name and About text there.
 Never put a token in `config.js`. Everything in a GitHub Pages repository is public to site visitors.
