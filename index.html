@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="A modern software download portal for desktop applications and developer tools.">
+  <meta name="theme-color" content="#07111f">
+  <title>CodeVault Downloads</title>
+  <link rel="preconnect" href="https://api.github.com">
+  <link rel="stylesheet" href="assets/css/styles.css">
+  <script src="assets/js/config.js" defer></script>
+  <script src="assets/js/app.js" defer></script>
+</head>
+<body>
+  <div class="background-grid" aria-hidden="true"></div>
+  <div class="orb orb-one" aria-hidden="true"></div>
+  <div class="orb orb-two" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="Go to homepage">
+      <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
+      <span>
+        <strong data-brand-name>CodeVault</strong>
+        <small>Software Downloads</small>
+      </span>
+    </a>
+
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="main-nav">
+      <span></span><span></span><span></span>
+      <span class="sr-only">Open navigation</span>
+    </button>
+
+    <nav id="main-nav" class="main-nav" aria-label="Main navigation">
+      <a href="#applications">Applications</a>
+      <a href="#about">About</a>
+      <a href="#support">Support</a>
+      <a class="nav-github" data-repo-link href="#" target="_blank" rel="noopener noreferrer">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero shell">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot"></span> Independent software, built with purpose</p>
+        <h1>Useful software.<br><span class="gradient-text">Zero hunting required.</span></h1>
+        <p class="hero-text">
+          Browse the latest versions of my applications, utilities, dashboards, and developer tools—all in one secure, easy-to-navigate download hub.
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#applications">Browse Applications <span aria-hidden="true">↓</span></a>
+          <a class="button button-secondary" data-repo-link href="#" target="_blank" rel="noopener noreferrer">View Source <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="hero-stats" aria-label="Download portal statistics">
+          <div><strong id="app-count">0</strong><span>Applications</span></div>
+          <div><strong id="download-count">0</strong><span>Total Downloads</span></div>
+          <div><strong id="latest-date">—</strong><span>Latest Update</span></div>
+        </div>
+      </div>
+
+      <div class="terminal-card" aria-label="Decorative terminal window">
+        <div class="terminal-bar">
+          <div class="terminal-dots"><span></span><span></span><span></span></div>
+          <span>software_hub.exe</span>
+        </div>
+        <div class="terminal-body" aria-hidden="true">
+          <p><span class="prompt">PS C:\Users\Developer&gt;</span> Get-Software</p>
+          <p><span class="muted">[INFO]</span> Connecting to release server...</p>
+          <p><span class="success">[OK]</span> Catalog synchronized.</p>
+          <p><span class="success">[OK]</span> Latest builds verified.</p>
+          <p><span class="muted">[INFO]</span> Select an application below.</p>
+          <p><span class="prompt">PS C:\Users\Developer&gt;</span> <span class="cursor">_</span></p>
+        </div>
+        <div class="circuit-node node-a"></div>
+        <div class="circuit-node node-b"></div>
+        <div class="circuit-line line-a"></div>
+        <div class="circuit-line line-b"></div>
+      </div>
+    </section>
+
+    <section id="applications" class="catalog-section shell">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">// Download catalog</p>
+          <h2>Applications</h2>
+          <p>Choose a program to view details, system requirements, release notes, and available files.</p>
+        </div>
+        <div class="sync-badge" id="sync-badge" title="Catalog status">
+          <span class="status-dot"></span>
+          <span id="sync-text">Connecting...</span>
+        </div>
+      </div>
+
+      <div class="catalog-toolbar">
+        <label class="search-box">
+          <span aria-hidden="true">⌕</span>
+          <span class="sr-only">Search applications</span>
+          <input id="search-input" type="search" placeholder="Search applications, tools, or categories..." autocomplete="off">
+          <kbd>Ctrl K</kbd>
+        </label>
+        <select id="category-filter" aria-label="Filter applications by category">
+          <option value="all">All Categories</option>
+        </select>
+        <select id="sort-filter" aria-label="Sort applications">
+          <option value="newest">Newest First</option>
+          <option value="name">Name A–Z</option>
+          <option value="downloads">Most Downloaded</option>
+        </select>
+      </div>
+
+      <div id="loading-state" class="loading-state" aria-live="polite">
+        <div class="loader"></div>
+        <strong>Synchronizing release catalog...</strong>
+        <span>Pulling the latest application data from GitHub.</span>
+      </div>
+
+      <div id="app-grid" class="app-grid" aria-live="polite"></div>
+
+      <div id="empty-state" class="empty-state" hidden>
+        <div class="empty-icon">404</div>
+        <h3>No applications found</h3>
+        <p>Try a different search phrase or category.</p>
+        <button class="button button-secondary" id="clear-filters" type="button">Clear Filters</button>
+      </div>
+    </section>
+
+    <section id="about" class="about-section shell">
+      <div class="about-panel">
+        <div>
+          <p class="eyebrow">// Built by a developer</p>
+          <h2>Software that solves real problems.</h2>
+          <p data-about-text>
+            This download portal contains independently developed Windows applications, utilities, reporting tools, and workflow solutions. Each release is hosted through GitHub Releases for dependable delivery and transparent version history.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <span aria-hidden="true">⌁</span>
+            <h3>Direct Downloads</h3>
+            <p>Download installation packages directly from each official release.</p>
+          </article>
+          <article>
+            <span aria-hidden="true">⟳</span>
+            <h3>Current Versions</h3>
+            <p>The catalog automatically displays the newest published release.</p>
+          </article>
+          <article>
+            <span aria-hidden="true">✓</span>
+            <h3>Release History</h3>
+            <p>View version details, release notes, file sizes, and download counts.</p>
+          </article>
+          <article>
+            <span aria-hidden="true">◇</span>
+            <h3>Simple Navigation</h3>
+            <p>Search, filter, and compare applications without unnecessary clutter.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="support" class="support-section shell">
+      <div class="support-card">
+        <div>
+          <p class="eyebrow">// Need assistance?</p>
+          <h2>Questions, bugs, or feature ideas?</h2>
+          <p>Use the support link to report a problem or ask about one of the applications.</p>
+        </div>
+        <a class="button button-primary" id="support-link" href="mailto:support@example.com">Contact Support</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer shell">
+    <div class="brand footer-brand">
+      <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
+      <span><strong data-brand-name>CodeVault</strong><small>Software Downloads</small></span>
+    </div>
+    <p>© <span id="current-year"></span> <span data-brand-name>CodeVault</span>. All rights reserved.</p>
+    <div class="footer-links">
+      <a data-repo-link href="#" target="_blank" rel="noopener noreferrer">Repository</a>
+      <a data-releases-link href="#" target="_blank" rel="noopener noreferrer">All Releases</a>
+    </div>
+  </footer>
+
+  <dialog id="details-modal" class="details-modal">
+    <button class="modal-close" type="button" aria-label="Close application details">×</button>
+    <div id="modal-content"></div>
+  </dialog>
+
+  <template id="app-card-template">
+    <article class="app-card">
+      <div class="app-card-top">
+        <div class="app-icon" aria-hidden="true"></div>
+        <div class="app-badges"></div>
+      </div>
+      <div class="app-card-copy">
+        <p class="app-category"></p>
+        <h3 class="app-title"></h3>
+        <p class="app-summary"></p>
+      </div>
+      <div class="app-meta">
+        <span class="app-version"></span>
+        <span class="app-platform"></span>
+        <span class="app-downloads"></span>
+      </div>
+      <div class="app-card-actions">
+        <button class="button button-secondary details-button" type="button">Details</button>
+        <a class="button button-primary download-button" href="#">Download</a>
+      </div>
+    </article>
+  </template>
+
+  <noscript>
+    <div class="noscript-message">JavaScript is required to load the application catalog.</div>
+  </noscript>
+</body>
+</html>

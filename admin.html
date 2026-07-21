@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="theme-color" content="#07111f">
+  <title>Publisher Console | CodeVault</title>
+  <link rel="stylesheet" href="assets/css/styles.css">
+  <script src="assets/js/config.js" defer></script>
+  <script src="assets/js/admin.js" defer></script>
+</head>
+<body class="admin-body">
+  <div class="background-grid" aria-hidden="true"></div>
+  <div class="orb orb-one" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
+      <span><strong data-brand-name>CodeVault</strong><small>Publisher Console</small></span>
+    </a>
+    <a class="button button-secondary button-small" href="index.html">← Public Website</a>
+  </header>
+
+  <main class="admin-shell shell">
+    <section class="admin-intro">
+      <p class="eyebrow"><span class="status-dot"></span> Private publishing workspace</p>
+      <h1>Release Publisher</h1>
+      <p>Create a GitHub Release, upload application files, and make the new version appear automatically in the public catalog.</p>
+    </section>
+
+    <div class="security-notice">
+      <span class="notice-icon" aria-hidden="true">!</span>
+      <div>
+        <strong>Your token is never saved by this website.</strong>
+        <p>It remains only in this browser tab's memory and is erased when the page closes or reloads. Never place a token inside <code>config.js</code> or commit it to GitHub.</p>
+      </div>
+    </div>
+
+    <section class="admin-layout">
+      <aside class="admin-sidebar">
+        <div class="admin-panel">
+          <div class="panel-heading">
+            <span class="step-number">01</span>
+            <div><h2>Connect</h2><p>Authenticate with GitHub</p></div>
+          </div>
+
+          <label class="field-label" for="github-token">Fine-grained token</label>
+          <div class="password-field">
+            <input id="github-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_...">
+            <button id="toggle-token" type="button" aria-label="Show or hide token">Show</button>
+          </div>
+          <p class="field-help">Required permission: selected repository → <strong>Contents: Read and write</strong>.</p>
+
+          <button id="connect-button" class="button button-primary button-full" type="button">Test Connection</button>
+          <div id="connection-status" class="connection-status" aria-live="polite">Not connected</div>
+        </div>
+
+        <div class="admin-panel repo-panel">
+          <p class="field-label">Configured repository</p>
+          <code id="configured-repo">OWNER/REPOSITORY</code>
+          <a data-repo-link href="#" target="_blank" rel="noopener noreferrer">Open Repository ↗</a>
+        </div>
+      </aside>
+
+      <section class="admin-panel release-panel">
+        <div class="panel-heading">
+          <span class="step-number">02</span>
+          <div><h2>Publish Application</h2><p>Enter release details and select files</p></div>
+        </div>
+
+        <form id="release-form" novalidate>
+          <div class="form-grid two-columns">
+            <label>
+              <span>Application Name *</span>
+              <input id="app-name" name="appName" type="text" required maxlength="80" placeholder="Daily Ops Report Bot">
+            </label>
+            <label>
+              <span>Application Slug *</span>
+              <input id="app-slug" name="slug" type="text" required maxlength="60" pattern="[a-z0-9-]+" placeholder="daily-ops-report-bot">
+              <small>Lowercase letters, numbers, and hyphens only.</small>
+            </label>
+            <label>
+              <span>Version *</span>
+              <input id="version" name="version" type="text" required maxlength="30" placeholder="1.0.0">
+            </label>
+            <label>
+              <span>Category *</span>
+              <select id="category" name="category" required>
+                <option value="">Choose a category</option>
+                <option>Business</option>
+                <option>Dashboard</option>
+                <option>Developer Tool</option>
+                <option>Manufacturing</option>
+                <option>Productivity</option>
+                <option>Utility</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label>
+              <span>Platform</span>
+              <select id="platform" name="platform">
+                <option>Windows</option>
+                <option>Windows 10/11</option>
+                <option>Cross-platform</option>
+                <option>Web</option>
+                <option>Linux</option>
+                <option>macOS</option>
+              </select>
+            </label>
+            <label>
+              <span>Icon</span>
+              <select id="icon" name="icon">
+                <option value="terminal">Terminal</option>
+                <option value="dashboard">Dashboard</option>
+                <option value="database">Database</option>
+                <option value="gear">Gear</option>
+                <option value="package">Package</option>
+                <option value="robot">Robot</option>
+                <option value="chart">Chart</option>
+                <option value="code">Code</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            <span>Short Summary *</span>
+            <input id="summary" name="summary" type="text" required maxlength="180" placeholder="A concise one-sentence description shown on the application card.">
+          </label>
+
+          <label>
+            <span>Full Description</span>
+            <textarea id="description" name="description" rows="5" placeholder="Explain what the application does, who it is for, and its main benefits."></textarea>
+          </label>
+
+          <div class="form-grid two-columns">
+            <label>
+              <span>System Requirements</span>
+              <textarea id="requirements" name="requirements" rows="4" placeholder="Windows 10 or later&#10;.NET 8 Desktop Runtime&#10;4 GB RAM"></textarea>
+            </label>
+            <label>
+              <span>Release Notes</span>
+              <textarea id="release-notes" name="releaseNotes" rows="4" placeholder="Added feature...&#10;Improved performance...&#10;Fixed issue..."></textarea>
+            </label>
+          </div>
+
+          <label class="file-drop" id="file-drop">
+            <input id="release-files" name="files" type="file" multiple required>
+            <span class="drop-icon" aria-hidden="true">⇧</span>
+            <strong>Choose application files</strong>
+            <span>or drag and drop installers, ZIP files, documentation, and checksums</span>
+            <small>GitHub allows release assets smaller than 2 GiB each.</small>
+          </label>
+          <div id="file-list" class="file-list"></div>
+
+          <div class="release-options">
+            <label class="checkbox-label"><input id="prerelease" type="checkbox"> Mark as pre-release</label>
+            <label class="checkbox-label"><input id="latest" type="checkbox" checked> Display in public catalog</label>
+          </div>
+
+          <div id="publish-progress" class="publish-progress" hidden>
+            <div class="progress-heading"><span id="progress-label">Preparing release...</span><strong id="progress-percent">0%</strong></div>
+            <div class="progress-track"><div id="progress-bar"></div></div>
+            <div id="publish-log" class="publish-log" aria-live="polite"></div>
+          </div>
+
+          <div id="form-message" class="form-message" aria-live="polite"></div>
+
+          <button id="publish-button" class="button button-primary button-large button-full" type="submit" disabled>
+            Publish Release & Upload Files
+          </button>
+        </form>
+      </section>
+    </section>
+
+    <section class="admin-panel recent-panel">
+      <div class="panel-heading">
+        <span class="step-number">03</span>
+        <div><h2>Recent Releases</h2><p>Verify what is currently published</p></div>
+        <button id="refresh-releases" class="button button-secondary button-small" type="button">Refresh</button>
+      </div>
+      <div id="recent-releases" class="recent-releases">
+        <p class="muted-text">Connect to GitHub to view recent releases.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer shell">
+    <p>Publisher Console · <span data-brand-name>CodeVault</span></p>
+    <p>Close this tab after publishing to clear the token from memory.</p>
+  </footer>
+</body>
+</html>
