@@ -66,7 +66,15 @@
       <section class="admin-panel release-panel">
         <div class="panel-heading">
           <span class="step-number">02</span>
-          <div><h2>Publish Application</h2><p>Enter release details and select files</p></div>
+          <div><h2 id="editor-title">Publish Application</h2><p id="editor-subtitle">Create a new app or release version</p></div>
+        </div>
+
+        <div id="editor-mode" class="editor-mode" hidden>
+          <div>
+            <strong id="editor-mode-title">Editing release</strong>
+            <span id="editor-mode-detail"></span>
+          </div>
+          <button id="cancel-edit" class="button button-secondary button-small" type="button">Cancel</button>
         </div>
 
         <form id="release-form" novalidate>
@@ -144,8 +152,15 @@
             </label>
           </div>
 
+          <div id="existing-assets-panel" class="existing-assets-panel" hidden>
+            <div class="existing-assets-heading">
+              <div><strong>Existing Files</strong><span>Mark a file for removal, or upload a new file with the same name to replace it.</span></div>
+            </div>
+            <div id="existing-assets" class="existing-assets"></div>
+          </div>
+
           <label class="file-drop" id="file-drop">
-            <input id="release-files" name="files" type="file" multiple required>
+            <input id="release-files" name="files" type="file" multiple>
             <span class="drop-icon" aria-hidden="true">⇧</span>
             <strong>Choose application files</strong>
             <span>or drag and drop installers, ZIP files, documentation, and checksums</span>
@@ -166,9 +181,12 @@
 
           <div id="form-message" class="form-message" aria-live="polite"></div>
 
-          <button id="publish-button" class="button button-primary button-large button-full" type="submit" disabled>
-            Publish Release & Upload Files
-          </button>
+          <div class="form-actions">
+            <button id="publish-button" class="button button-primary button-large" type="submit" disabled>
+              Publish Release & Upload Files
+            </button>
+            <button id="clear-form" class="button button-secondary button-large" type="button">Clear Form</button>
+          </div>
         </form>
       </section>
     </section>
@@ -176,9 +194,10 @@
     <section class="admin-panel recent-panel">
       <div class="panel-heading">
         <span class="step-number">03</span>
-        <div><h2>Recent Releases</h2><p>Verify what is currently published</p></div>
+        <div><h2>Manage Apps & Releases</h2><p>Edit details, publish updates, replace files, or remove releases</p></div>
         <button id="refresh-releases" class="button button-secondary button-small" type="button">Refresh</button>
       </div>
+      <p class="management-help">Use <strong>Edit Details</strong> to change the app card or files. Use <strong>New Version</strong> for an updated build such as v1.1.0. Releases created directly on GitHub can be imported with <strong>Add to Website</strong>.</p>
       <div id="recent-releases" class="recent-releases">
         <p class="muted-text">Connect to GitHub to view recent releases.</p>
       </div>
