@@ -1,476 +1,920 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap');
+(() => {
+  "use strict";
 
-:root {
-  --bg: #050b14;
-  --bg-soft: #081221;
-  --panel: rgba(10, 24, 41, 0.82);
-  --panel-solid: #0a1829;
-  --panel-light: #10223a;
-  --border: rgba(112, 180, 255, 0.16);
-  --border-strong: rgba(82, 222, 255, 0.34);
-  --text: #edf7ff;
-  --text-soft: #a8bdd0;
-  --muted: #6f879d;
-  --cyan: #42dcff;
-  --blue: #5e83ff;
-  --violet: #9f72ff;
-  --green: #4df2a8;
-  --yellow: #ffd166;
-  --red: #ff6b83;
-  --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
-  --radius: 18px;
-  --mono: "IBM Plex Mono", Consolas, monospace;
-  --sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
+  const config = window.DOWNLOAD_PORTAL_CONFIG || {};
+  const API_BASE = "https://api.github.com";
+  const API_VERSION = config.githubApiVersion || "2026-03-10";
+  const MAX_ASSET_SIZE = 2 * 1024 * 1024 * 1024;
 
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body {
-  margin: 0;
-  min-width: 320px;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--sans);
-  line-height: 1.6;
-  overflow-x: hidden;
-}
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(circle at 50% -20%, rgba(70, 145, 255, 0.16), transparent 42%);
-  z-index: -4;
-}
-a { color: inherit; }
-button, input, select, textarea { font: inherit; }
-button, a { -webkit-tap-highlight-color: transparent; }
-::selection { background: rgba(66, 220, 255, 0.24); color: #fff; }
+  let token = "";
+  let connectedUser = null;
+  let editorMode = "create";
+  let selectedRelease = null;
+  let releasesCache = [];
+  const removedAssetIds = new Set();
+  const elements = {};
 
-.background-grid {
-  position: fixed;
-  inset: 0;
-  z-index: -5;
-  pointer-events: none;
-  opacity: 0.52;
-  background-image:
-    linear-gradient(rgba(77, 157, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(77, 157, 255, 0.045) 1px, transparent 1px);
-  background-size: 38px 38px;
-  mask-image: linear-gradient(to bottom, #000 0%, transparent 90%);
-}
-.orb { position: fixed; width: 430px; height: 430px; border-radius: 50%; filter: blur(100px); opacity: .12; z-index: -3; pointer-events: none; }
-.orb-one { background: var(--cyan); top: -160px; right: -100px; }
-.orb-two { background: var(--violet); bottom: 10%; left: -260px; }
+  document.addEventListener("DOMContentLoaded", init);
 
-.shell { width: min(1180px, calc(100% - 40px)); margin-inline: auto; }
-.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-.muted-text { color: var(--muted); }
-.error-text { color: var(--red); }
-.preserve-lines { white-space: pre-line; }
+  function init() {
+    cacheElements();
+    applyConfiguration();
+    bindEvents();
+    resetEditor({ clearMessage: true });
+    loadRecentReleases();
+  }
 
-.site-header {
-  width: min(1240px, calc(100% - 32px));
-  margin: 18px auto 0;
-  min-height: 70px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 12px 18px;
-  position: sticky;
-  top: 14px;
-  z-index: 50;
-  background: rgba(6, 14, 25, .78);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  backdrop-filter: blur(18px);
-  box-shadow: 0 14px 50px rgba(0,0,0,.22);
-}
-.brand { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; }
-.brand-mark {
-  width: 43px; height: 43px; display: grid; place-items: center;
-  color: var(--cyan); font-family: var(--mono); font-weight: 700;
-  background: linear-gradient(145deg, rgba(66,220,255,.12), rgba(94,131,255,.08));
-  border: 1px solid var(--border-strong); border-radius: 12px;
-  box-shadow: inset 0 0 20px rgba(66,220,255,.06), 0 0 22px rgba(66,220,255,.08);
-}
-.brand strong, .brand small { display: block; }
-.brand strong { font-size: 1rem; letter-spacing: .02em; }
-.brand small { color: var(--muted); font-family: var(--mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; }
-.main-nav { display: flex; align-items: center; gap: 8px; }
-.main-nav a { padding: 9px 13px; border-radius: 9px; color: var(--text-soft); text-decoration: none; font-size: .9rem; transition: .2s ease; }
-.main-nav a:hover { color: var(--text); background: rgba(255,255,255,.05); }
-.main-nav .nav-github { border: 1px solid var(--border); }
-.nav-toggle { display: none; width: 42px; height: 42px; border: 0; background: transparent; cursor: pointer; }
-.nav-toggle span:not(.sr-only) { display: block; width: 23px; height: 2px; margin: 5px auto; background: var(--text); }
+  function cacheElements() {
+    [
+      "github-token", "toggle-token", "connect-button", "connection-status", "configured-repo",
+      "release-form", "app-name", "app-slug", "version", "category", "platform", "icon",
+      "summary", "description", "requirements", "release-notes", "release-files", "file-drop",
+      "file-list", "prerelease", "latest", "publish-button", "publish-progress", "progress-label",
+      "progress-percent", "progress-bar", "publish-log", "form-message", "recent-releases",
+      "refresh-releases", "editor-title", "editor-subtitle", "editor-mode", "editor-mode-title",
+      "editor-mode-detail", "cancel-edit", "clear-form", "existing-assets-panel", "existing-assets",
+      "management-connection-note"
+    ].forEach((id) => { elements[toCamel(id)] = document.getElementById(id); });
+  }
 
-.hero { min-height: 690px; padding: 100px 0 84px; display: grid; grid-template-columns: 1.05fr .95fr; gap: 84px; align-items: center; }
-.eyebrow { margin: 0 0 15px; color: var(--cyan); font: 600 .76rem/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
-.status-dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 16px var(--green); animation: pulse 2s infinite; }
-.hero h1 { margin: 0; font-size: clamp(3rem, 7vw, 5.8rem); line-height: .98; letter-spacing: -.06em; }
-.gradient-text { color: transparent; background: linear-gradient(110deg, var(--cyan), #73a7ff 54%, #b184ff); -webkit-background-clip: text; background-clip: text; }
-.hero-text { max-width: 680px; margin: 28px 0; color: var(--text-soft); font-size: 1.08rem; }
-.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.button {
-  min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 9px;
-  padding: 11px 17px; border: 1px solid transparent; border-radius: 10px;
-  font-weight: 700; font-size: .88rem; text-decoration: none; cursor: pointer;
-  transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease, opacity .18s ease;
-}
-.button:hover:not(:disabled):not(.is-disabled) { transform: translateY(-2px); }
-.button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
-.button-primary { color: #021018; background: linear-gradient(115deg, var(--cyan), #7aa1ff); box-shadow: 0 12px 30px rgba(66,220,255,.15); }
-.button-primary:hover:not(:disabled):not(.is-disabled) { box-shadow: 0 17px 38px rgba(66,220,255,.24); }
-.button-secondary { color: var(--text); background: rgba(255,255,255,.035); border-color: var(--border); }
-.button-secondary:hover:not(:disabled):not(.is-disabled) { border-color: var(--border-strong); background: rgba(66,220,255,.07); }
-.button-small { min-height: 38px; padding: 8px 13px; font-size: .8rem; }
-.button-large { min-height: 54px; font-size: .95rem; }
-.button-full { width: 100%; }
-.button:disabled, .button.is-disabled { opacity: .46; cursor: not-allowed; transform: none; }
-.hero-stats { display: flex; flex-wrap: wrap; gap: 0; margin-top: 46px; }
-.hero-stats div { min-width: 125px; padding: 0 24px; border-left: 1px solid var(--border); }
-.hero-stats div:first-child { padding-left: 0; border-left: 0; }
-.hero-stats strong, .hero-stats span { display: block; }
-.hero-stats strong { font: 600 1.35rem var(--mono); }
-.hero-stats span { color: var(--muted); font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; }
+  function applyConfiguration() {
+    const brand = config.brandName || "CodeVault";
+    document.title = `Publisher Console | ${brand}`;
+    document.querySelectorAll("[data-brand-name]").forEach((node) => { node.textContent = brand; });
+    elements.configuredRepo.textContent = `${config.githubOwner || "OWNER"}/${config.githubRepository || "REPOSITORY"}`;
+    const repoUrl = `https://github.com/${encodeURIComponent(config.githubOwner || "OWNER")}/${encodeURIComponent(config.githubRepository || "REPOSITORY")}`;
+    document.querySelectorAll("[data-repo-link]").forEach((link) => { link.href = repoUrl; });
+  }
 
-.terminal-card {
-  position: relative; min-height: 390px; border: 1px solid var(--border-strong); border-radius: 18px;
-  background: linear-gradient(145deg, rgba(14,32,52,.94), rgba(5,13,24,.95));
-  box-shadow: var(--shadow), inset 0 0 50px rgba(66,220,255,.035);
-  transform: perspective(1000px) rotateY(-4deg) rotateX(2deg);
-}
-.terminal-card::before { content: ""; position: absolute; inset: 8px; border: 1px solid rgba(255,255,255,.035); border-radius: 13px; pointer-events: none; }
-.terminal-bar { height: 52px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); color: var(--muted); font: .72rem var(--mono); }
-.terminal-dots { display: flex; gap: 7px; }
-.terminal-dots span { width: 9px; height: 9px; border-radius: 50%; background: #ff647b; }
-.terminal-dots span:nth-child(2) { background: #ffd166; }
-.terminal-dots span:nth-child(3) { background: var(--green); }
-.terminal-body { padding: 31px 28px; font: .83rem/1.9 var(--mono); color: var(--text-soft); }
-.terminal-body p { margin: 0; }
-.prompt { color: var(--cyan); }
-.success { color: var(--green); }
-.muted { color: var(--muted); }
-.cursor { color: var(--cyan); animation: blink 1s step-end infinite; }
-.circuit-node { position: absolute; width: 10px; height: 10px; border: 2px solid var(--cyan); background: var(--bg); border-radius: 50%; box-shadow: 0 0 15px var(--cyan); }
-.node-a { right: -5px; top: 27%; }
-.node-b { left: -5px; bottom: 24%; }
-.circuit-line { position: absolute; height: 1px; background: linear-gradient(90deg, transparent, var(--cyan)); opacity: .55; }
-.line-a { width: 90px; right: -68px; top: 28%; transform: rotate(90deg); }
-.line-b { width: 80px; left: -63px; bottom: 25%; transform: rotate(90deg); }
+  function bindEvents() {
+    elements.toggleToken.addEventListener("click", () => {
+      const hidden = elements.githubToken.type === "password";
+      elements.githubToken.type = hidden ? "text" : "password";
+      elements.toggleToken.textContent = hidden ? "Hide" : "Show";
+    });
 
-.catalog-section { padding: 88px 0; }
-.section-heading { display: flex; justify-content: space-between; align-items: end; gap: 30px; margin-bottom: 32px; }
-.section-heading h2, .about-panel h2, .support-card h2 { margin: 0; font-size: clamp(2rem, 4vw, 3.2rem); letter-spacing: -.04em; line-height: 1.1; }
-.section-heading p:not(.eyebrow), .about-panel > div > p:not(.eyebrow), .support-card p:not(.eyebrow) { max-width: 690px; margin: 12px 0 0; color: var(--text-soft); }
-.sync-badge { flex: 0 0 auto; padding: 9px 12px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-soft); background: rgba(255,255,255,.025); font: .7rem var(--mono); }
-.sync-badge[data-state="error"] .status-dot { background: var(--red); box-shadow: 0 0 16px var(--red); }
-.sync-badge[data-state="warning"] .status-dot, .sync-badge[data-state="demo"] .status-dot { background: var(--yellow); box-shadow: 0 0 16px var(--yellow); }
-.catalog-toolbar { display: grid; grid-template-columns: 1fr 190px 190px; gap: 12px; margin-bottom: 28px; }
-.search-box { min-height: 50px; display: flex; align-items: center; gap: 11px; padding: 0 15px; border: 1px solid var(--border); background: rgba(255,255,255,.025); border-radius: 11px; }
-.search-box:focus-within { border-color: var(--border-strong); box-shadow: 0 0 0 3px rgba(66,220,255,.05); }
-.search-box > span:first-child { color: var(--cyan); font-size: 1.3rem; }
-.search-box input { width: 100%; color: var(--text); background: transparent; border: 0; outline: 0; }
-.search-box input::placeholder { color: var(--muted); }
-kbd { color: var(--muted); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 2px 6px; font: .65rem var(--mono); white-space: nowrap; }
-select, input, textarea { color-scheme: dark; }
-.catalog-toolbar select, .form-grid select, .form-grid input, form > label input, textarea, .password-field input {
-  width: 100%; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.03); color: var(--text); outline: 0;
-}
-.catalog-toolbar select { min-height: 50px; padding: 0 13px; }
-.catalog-toolbar select:focus, input:focus, select:focus, textarea:focus { border-color: var(--border-strong); box-shadow: 0 0 0 3px rgba(66,220,255,.05); }
-.loading-state, .empty-state { min-height: 340px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--text-soft); border: 1px dashed var(--border); border-radius: var(--radius); background: rgba(255,255,255,.015); }
-.loading-state[hidden], .empty-state[hidden] { display: none; }
-.loading-state span, .empty-state p { color: var(--muted); }
-.loader { width: 40px; height: 40px; margin-bottom: 18px; border: 3px solid rgba(66,220,255,.15); border-top-color: var(--cyan); border-radius: 50%; animation: spin .8s linear infinite; }
-.empty-icon { margin-bottom: 12px; color: var(--cyan); font: 700 2.8rem var(--mono); }
-.empty-state h3 { margin: 0; }
-.app-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-.app-card {
-  min-height: 390px; padding: 22px; display: flex; flex-direction: column;
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: linear-gradient(155deg, rgba(16,34,58,.82), rgba(7,17,30,.9));
-  box-shadow: 0 15px 45px rgba(0,0,0,.17);
-  animation: cardIn .45s ease both; animation-delay: var(--card-delay);
-  transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
-}
-.app-card:hover { transform: translateY(-6px); border-color: var(--border-strong); box-shadow: 0 23px 55px rgba(0,0,0,.28), 0 0 30px rgba(66,220,255,.035); }
-.app-card-top { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
-.app-icon {
-  width: 58px; height: 58px; display: grid; place-items: center; flex: 0 0 auto;
-  border: 1px solid var(--border-strong); border-radius: 15px;
-  background: linear-gradient(145deg, rgba(66,220,255,.12), rgba(159,114,255,.08));
-  color: var(--cyan); font: 700 1.05rem var(--mono); box-shadow: inset 0 0 22px rgba(66,220,255,.05);
-}
-.app-icon[data-icon="robot"] { font-size: 1.5rem; }
-.app-icon.large { width: 78px; height: 78px; border-radius: 19px; font-size: 1.35rem; }
-.app-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.badge { display: inline-flex; align-items: center; min-height: 25px; padding: 3px 8px; border-radius: 999px; font: 600 .62rem var(--mono); text-transform: uppercase; letter-spacing: .05em; border: 1px solid var(--border); }
-.badge-success { color: var(--green); background: rgba(77,242,168,.08); border-color: rgba(77,242,168,.22); }
-.badge-warning { color: var(--yellow); background: rgba(255,209,102,.08); border-color: rgba(255,209,102,.22); }
-.badge-muted { color: var(--text-soft); background: rgba(255,255,255,.04); }
-.app-card-copy { margin: 23px 0 0; }
-.app-category { margin: 0 0 5px; color: var(--cyan); font: 600 .66rem var(--mono); text-transform: uppercase; letter-spacing: .1em; }
-.app-title { margin: 0; font-size: 1.28rem; line-height: 1.25; }
-.app-summary { margin: 12px 0 0; color: var(--text-soft); font-size: .89rem; }
-.app-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: auto; padding-top: 21px; color: var(--muted); font: .69rem var(--mono); }
-.app-meta span { position: relative; }
-.app-meta span:not(:last-child)::after { content: "·"; position: absolute; right: -10px; }
-.app-card-actions { display: grid; grid-template-columns: .8fr 1.2fr; gap: 9px; margin-top: 18px; }
+    elements.connectButton.addEventListener("click", connect);
+    elements.releaseForm.addEventListener("submit", submitEditor);
+    elements.appName.addEventListener("input", autoSlug);
+    elements.appSlug.addEventListener("input", normalizeSlugInput);
+    elements.releaseFiles.addEventListener("change", renderFileList);
+    elements.refreshReleases.addEventListener("click", loadRecentReleases);
+    elements.cancelEdit.addEventListener("click", () => resetEditor());
+    elements.clearForm.addEventListener("click", () => resetEditor());
+    elements.existingAssets.addEventListener("change", handleAssetRemovalToggle);
+    elements.recentReleases.addEventListener("click", handleReleaseAction);
 
-.about-section { padding: 60px 0 90px; }
-.about-panel { padding: clamp(28px, 5vw, 58px); display: grid; grid-template-columns: .82fr 1.18fr; gap: 70px; align-items: center; border: 1px solid var(--border); border-radius: 24px; background: linear-gradient(135deg, rgba(14,31,52,.86), rgba(7,16,29,.92)); box-shadow: var(--shadow); }
-.feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
-.feature-grid article { padding: 19px; border: 1px solid var(--border); border-radius: 14px; background: rgba(255,255,255,.025); }
-.feature-grid article > span { display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 12px; border-radius: 9px; background: rgba(66,220,255,.08); color: var(--cyan); font-family: var(--mono); }
-.feature-grid h3 { margin: 0; font-size: .95rem; }
-.feature-grid p { margin: 7px 0 0; color: var(--muted); font-size: .79rem; line-height: 1.55; }
-.support-section { padding: 20px 0 100px; }
-.support-card { padding: 38px 42px; display: flex; align-items: center; justify-content: space-between; gap: 30px; border: 1px solid var(--border-strong); border-radius: 20px; background: linear-gradient(120deg, rgba(66,220,255,.07), rgba(94,131,255,.06), rgba(159,114,255,.05)); }
-.site-footer { padding: 26px 0 36px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: .76rem; }
-.footer-brand .brand-mark { width: 36px; height: 36px; border-radius: 9px; font-size: .76rem; }
-.footer-links { display: flex; gap: 18px; }
-.footer-links a { text-decoration: none; }
-.footer-links a:hover { color: var(--cyan); }
+    ["dragenter", "dragover"].forEach((type) => elements.fileDrop.addEventListener(type, (event) => {
+      event.preventDefault();
+      elements.fileDrop.classList.add("is-dragging");
+    }));
 
-.details-modal {
-  width: min(760px, calc(100% - 30px)); max-height: calc(100vh - 42px); overflow: auto; padding: 0;
-  color: var(--text); border: 1px solid var(--border-strong); border-radius: 20px;
-  background: #081525; box-shadow: 0 40px 110px rgba(0,0,0,.65);
-}
-.details-modal::backdrop { background: rgba(1,5,10,.78); backdrop-filter: blur(8px); }
-.modal-close { position: sticky; top: 14px; float: right; z-index: 2; width: 38px; height: 38px; margin: 14px 14px -52px 0; border: 1px solid var(--border); border-radius: 50%; background: rgba(5,11,20,.85); color: var(--text); font-size: 1.4rem; cursor: pointer; }
-#modal-content { padding: 34px; }
-.modal-app-header { display: flex; align-items: center; gap: 18px; padding-right: 45px; }
-.modal-app-header h2 { margin: 0; font-size: 2rem; letter-spacing: -.03em; }
-.modal-version-row { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font: .72rem var(--mono); }
-.modal-summary { margin: 24px 0; padding: 18px; border: 1px solid var(--border); border-radius: 12px; color: var(--text-soft); background: rgba(255,255,255,.025); }
-.modal-sections { display: grid; gap: 24px; }
-.modal-sections h3 { margin: 0 0 10px; font-size: .78rem; color: var(--cyan); font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; }
-.modal-sections p, .modal-sections li { color: var(--text-soft); font-size: .88rem; }
-.modal-sections ul { margin: 0; padding-left: 20px; }
-.asset-list { display: grid; gap: 8px; }
-.asset-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--border); border-radius: 10px; text-decoration: none; background: rgba(255,255,255,.02); }
-.asset-row:hover { border-color: var(--border-strong); background: rgba(66,220,255,.04); }
-.asset-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; background: rgba(66,220,255,.08); color: var(--cyan); }
-.asset-row strong, .asset-row small { display: block; }
-.asset-row strong { font-size: .82rem; overflow-wrap: anywhere; }
-.asset-row small { color: var(--muted); font-size: .68rem; }
-.asset-action { color: var(--cyan); font-size: .76rem; }
-.release-link { display: inline-block; margin-top: 25px; color: var(--cyan); font-size: .82rem; }
-.noscript-message { position: fixed; bottom: 20px; left: 20px; right: 20px; padding: 15px; background: #481624; color: #fff; border-radius: 10px; text-align: center; z-index: 100; }
+    ["dragleave", "drop"].forEach((type) => elements.fileDrop.addEventListener(type, (event) => {
+      event.preventDefault();
+      elements.fileDrop.classList.remove("is-dragging");
+    }));
 
-/* Admin */
-.admin-shell { padding-top: 70px; padding-bottom: 80px; }
-.admin-intro { max-width: 780px; margin-bottom: 30px; }
-.admin-intro h1 { margin: 0; font-size: clamp(2.7rem, 6vw, 4.8rem); letter-spacing: -.055em; line-height: 1; }
-.admin-intro > p:last-child { color: var(--text-soft); }
-.security-notice { display: flex; gap: 15px; align-items: flex-start; margin-bottom: 22px; padding: 17px; border: 1px solid rgba(255,209,102,.24); border-radius: 13px; background: rgba(255,209,102,.055); }
-.notice-icon { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: #07111f; background: var(--yellow); font-weight: 800; }
-.security-notice p { margin: 3px 0 0; color: var(--text-soft); font-size: .84rem; }
-.security-notice code { color: var(--yellow); font-family: var(--mono); }
-.admin-layout { display: grid; grid-template-columns: 315px 1fr; gap: 18px; align-items: start; }
-.admin-sidebar { display: grid; gap: 18px; position: sticky; top: 104px; }
-.admin-panel { padding: 22px; border: 1px solid var(--border); border-radius: var(--radius); background: linear-gradient(150deg, rgba(15,32,53,.9), rgba(7,17,30,.94)); box-shadow: 0 18px 50px rgba(0,0,0,.18); }
-.panel-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
-.panel-heading > .button { margin-left: auto; }
-.panel-heading h2, .panel-heading p { margin: 0; }
-.panel-heading h2 { font-size: 1.05rem; }
-.panel-heading p { color: var(--muted); font-size: .73rem; }
-.step-number { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 auto; color: var(--cyan); border: 1px solid var(--border-strong); border-radius: 10px; background: rgba(66,220,255,.06); font: 600 .7rem var(--mono); }
-.field-label, form label > span { display: block; margin-bottom: 7px; color: var(--text-soft); font-size: .76rem; font-weight: 600; }
-.password-field { display: grid; grid-template-columns: 1fr auto; }
-.password-field input { min-width: 0; height: 44px; padding: 0 11px; border-radius: 9px 0 0 9px; font-family: var(--mono); }
-.password-field button { padding: 0 12px; color: var(--cyan); border: 1px solid var(--border); border-left: 0; border-radius: 0 9px 9px 0; background: rgba(255,255,255,.035); cursor: pointer; font-size: .72rem; }
-.field-help, form label small { display: block; margin: 7px 0 0; color: var(--muted); font-size: .67rem; line-height: 1.45; }
-.admin-sidebar .button { margin-top: 16px; }
-.connection-status { margin-top: 12px; padding: 9px 10px; border-radius: 8px; color: var(--muted); background: rgba(255,255,255,.025); font: .7rem var(--mono); text-align: center; }
-.connection-status[data-state="success"] { color: var(--green); background: rgba(77,242,168,.07); }
-.connection-status[data-state="error"] { color: var(--red); background: rgba(255,107,131,.07); }
-.connection-status[data-state="loading"] { color: var(--yellow); }
-.repo-panel code { display: block; margin: 7px 0 12px; padding: 10px; border-radius: 8px; background: rgba(0,0,0,.18); color: var(--cyan); font-size: .76rem; overflow-wrap: anywhere; }
-.repo-panel a { color: var(--text-soft); font-size: .76rem; }
-.release-panel form { display: grid; gap: 18px; }
-.form-grid { display: grid; gap: 15px; }
-.two-columns { grid-template-columns: 1fr 1fr; }
-form label { display: block; }
-.form-grid input, form > label input, .form-grid select, textarea { min-height: 45px; padding: 10px 12px; }
-textarea { resize: vertical; min-height: 100px; line-height: 1.5; }
-.file-drop { min-height: 190px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 25px; text-align: center; border: 1px dashed var(--border-strong); border-radius: 13px; background: rgba(66,220,255,.025); cursor: pointer; transition: .2s ease; }
-.file-drop:hover, .file-drop.is-dragging { border-color: var(--cyan); background: rgba(66,220,255,.065); }
-.file-drop input { position: absolute; opacity: 0; pointer-events: none; }
-.drop-icon { width: 44px; height: 44px; display: grid; place-items: center; margin-bottom: 9px; border-radius: 12px; color: var(--cyan); background: rgba(66,220,255,.08); font-size: 1.4rem; }
-.file-drop > span:not(.drop-icon) { color: var(--text-soft); font-size: .78rem; }
-.file-drop small { color: var(--muted); font-size: .68rem; }
-.file-list { display: grid; gap: 7px; }
-.file-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; color: var(--text-soft); font-size: .72rem; }
-.file-row.file-error { border-color: rgba(255,107,131,.35); color: var(--red); }
-.file-type { min-width: 38px; padding: 5px; border-radius: 6px; background: rgba(66,220,255,.07); color: var(--cyan); font: 600 .58rem var(--mono); text-align: center; }
-.file-row strong, .file-row small { display: block; }
-.file-row strong { color: var(--text); overflow-wrap: anywhere; }
-.file-row small { color: var(--muted); }
-.release-options { display: flex; flex-wrap: wrap; gap: 20px; }
-.checkbox-label { display: inline-flex; align-items: center; gap: 8px; color: var(--text-soft); font-size: .78rem; cursor: pointer; }
-.checkbox-label input { accent-color: var(--cyan); }
-.publish-progress { padding: 14px; border: 1px solid var(--border); border-radius: 11px; background: rgba(0,0,0,.13); }
-.publish-progress[hidden] { display: none; }
-.progress-heading { display: flex; justify-content: space-between; gap: 15px; margin-bottom: 8px; font-size: .72rem; }
-.progress-heading strong { color: var(--cyan); font-family: var(--mono); }
-.progress-track { height: 8px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.06); }
-.progress-track > div { width: 0; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--violet)); transition: width .25s ease; }
-.publish-log { max-height: 155px; overflow: auto; margin-top: 12px; padding: 10px; border-radius: 8px; background: #050b14; font: .66rem/1.6 var(--mono); }
-.publish-log p { margin: 0; color: var(--text-soft); }
-.publish-log p[data-type="success"] { color: var(--green); }
-.publish-log p[data-type="error"] { color: var(--red); }
-.form-message { min-height: 0; padding: 0; border-radius: 9px; font-size: .79rem; }
-.form-message:not(:empty) { padding: 11px 12px; }
-.form-message[data-state="success"] { color: var(--green); border: 1px solid rgba(77,242,168,.22); background: rgba(77,242,168,.06); }
-.form-message[data-state="error"] { color: var(--red); border: 1px solid rgba(255,107,131,.22); background: rgba(255,107,131,.06); }
-.recent-panel { margin-top: 18px; }
-.recent-releases { display: grid; gap: 8px; }
-.release-row { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.02); }
-.release-row strong, .release-row span { display: block; }
-.release-row strong { font-size: .84rem; }
-.release-row-main > div:first-child > span { color: var(--muted); font: .66rem var(--mono); }
-.release-row-meta { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .7rem; }
-.release-row-meta a { color: var(--cyan); }
+    elements.fileDrop.addEventListener("drop", (event) => {
+      if (!event.dataTransfer.files.length) return;
+      try {
+        elements.releaseFiles.files = event.dataTransfer.files;
+      } catch {
+        setMessage("Your browser could not add the dropped files. Use Choose application files instead.", "error");
+        return;
+      }
+      renderFileList();
+    });
 
+    window.addEventListener("beforeunload", () => {
+      token = "";
+      connectedUser = null;
+      elements.githubToken.value = "";
+    });
+  }
 
-.editor-mode {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin: -4px 0 20px;
-  padding: 13px 14px;
-  border: 1px solid rgba(66,220,255,.25);
-  border-radius: 11px;
-  background: linear-gradient(90deg, rgba(66,220,255,.08), rgba(159,114,255,.055));
-}
-.editor-mode[hidden] { display: none; }
-.editor-mode strong, .editor-mode span { display: block; }
-.editor-mode strong { color: var(--cyan); font-size: .82rem; }
-.editor-mode span { color: var(--text-soft); font: .68rem var(--mono); }
-.form-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
-.button-danger { color: #ffdce3; background: rgba(255,107,131,.07); border-color: rgba(255,107,131,.28); }
-.button-danger:hover:not(:disabled) { background: rgba(255,107,131,.14); border-color: rgba(255,107,131,.48); }
-.existing-assets-panel { padding: 15px; border: 1px solid var(--border); border-radius: 12px; background: rgba(0,0,0,.12); }
-.existing-assets-panel[hidden] { display: none; }
-.existing-assets-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 11px; }
-.existing-assets-heading strong, .existing-assets-heading span { display: block; }
-.existing-assets-heading strong { font-size: .82rem; }
-.existing-assets-heading span { color: var(--muted); font-size: .68rem; }
-.existing-assets { display: grid; gap: 7px; }
-.existing-asset-row { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.018); cursor: pointer; transition: .18s ease; }
-.existing-asset-row:hover { border-color: var(--border-strong); }
-.existing-asset-row strong, .existing-asset-row small { display: block; }
-.existing-asset-row strong { color: var(--text); font-size: .75rem; overflow-wrap: anywhere; }
-.existing-asset-row small { color: var(--muted); font-size: .65rem; }
-.existing-asset-row.is-removed { opacity: .58; border-color: rgba(255,107,131,.3); background: rgba(255,107,131,.045); }
-.existing-asset-row.is-removed strong { text-decoration: line-through; }
-.asset-remove-control { display: inline-flex; align-items: center; gap: 7px; color: var(--red); font-size: .7rem; white-space: nowrap; }
-.asset-remove-control input { accent-color: var(--red); }
-.management-help { margin: -6px 0 18px; color: var(--text-soft); font-size: .78rem; }
-.release-row { display: grid; grid-template-columns: minmax(260px,1fr) auto auto; align-items: center; }
-.release-row-main { min-width: 0; display: flex; align-items: center; gap: 14px; }
-.release-row-main > div:first-child { min-width: 0; }
-.release-row-main strong, .release-row-main span { display: block; }
-.release-row-main strong { overflow-wrap: anywhere; }
-.release-statuses { display: flex; flex-wrap: wrap; gap: 6px; }
-.release-statuses .badge { display: inline-flex; }
-.release-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
-.release-row-actions .button { min-height: 34px; padding: 6px 10px; font-size: .7rem; }
-.badge-info { color: var(--cyan); background: rgba(66,220,255,.08); border-color: rgba(66,220,255,.18); }
-input:disabled, select:disabled, textarea:disabled { opacity: .62; cursor: not-allowed; }
+  async function connect() {
+    clearMessage();
+    const enteredToken = elements.githubToken.value.trim();
+    if (!enteredToken) return setMessage("Enter your fine-grained GitHub token.", "error");
+    if (!isConfigured()) return setMessage("Update githubOwner and githubRepository in assets/js/config.js first.", "error");
 
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
-@keyframes blink { 50% { opacity: 0; } }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes cardIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+    setConnection("loading", "Testing connection...");
+    elements.connectButton.disabled = true;
 
-@media (max-width: 980px) {
-  .hero { grid-template-columns: 1fr; gap: 55px; padding-top: 78px; }
-  .hero-copy { max-width: 800px; }
-  .terminal-card { width: min(650px, 100%); }
-  .app-grid { grid-template-columns: repeat(2, 1fr); }
-  .about-panel { grid-template-columns: 1fr; gap: 38px; }
-  .admin-layout { grid-template-columns: 1fr; }
-  .admin-sidebar { position: static; grid-template-columns: 1fr 1fr; }
-}
+    try {
+      token = enteredToken;
+      const [user, repo] = await Promise.all([
+        githubFetch("/user"),
+        githubFetch(repoPath())
+      ]);
 
-@media (max-width: 720px) {
-  .shell { width: min(100% - 28px, 1180px); }
-  .site-header { width: calc(100% - 20px); margin-top: 10px; top: 8px; }
-  .nav-toggle { display: block; }
-  .main-nav { position: absolute; top: calc(100% + 8px); left: 0; right: 0; display: none; flex-direction: column; align-items: stretch; padding: 10px; background: rgba(6,14,25,.97); border: 1px solid var(--border); border-radius: 13px; box-shadow: var(--shadow); }
-  .main-nav.is-open { display: flex; }
-  .main-nav a { padding: 12px; }
-  .hero { min-height: 0; padding: 72px 0 65px; }
-  .hero h1 { font-size: clamp(2.75rem, 14vw, 4.4rem); }
-  .hero-stats div { min-width: 50%; margin-bottom: 15px; padding-left: 18px; }
-  .hero-stats div:nth-child(3) { border-left: 0; padding-left: 0; }
-  .terminal-card { min-height: 340px; transform: none; }
-  .terminal-body { padding: 26px 20px; font-size: .72rem; overflow-x: auto; }
-  .section-heading { align-items: start; flex-direction: column; }
-  .catalog-toolbar { grid-template-columns: 1fr; }
-  .app-grid { grid-template-columns: 1fr; }
-  .support-card { align-items: flex-start; flex-direction: column; padding: 28px; }
-  .support-card .button { width: 100%; }
-  .site-footer { flex-direction: column; align-items: flex-start; }
-  .footer-links { flex-wrap: wrap; }
-  #modal-content { padding: 25px 20px; }
-  .modal-app-header { align-items: flex-start; }
-  .modal-app-header h2 { font-size: 1.55rem; }
-  .asset-row { grid-template-columns: auto 1fr; }
-  .asset-action { grid-column: 2; }
-  .admin-sidebar { grid-template-columns: 1fr; }
-  .two-columns { grid-template-columns: 1fr; }
-  .release-row { grid-template-columns: 1fr; align-items: flex-start; }
-  .release-row-main { align-items: flex-start; flex-direction: column; }
-  .release-row-meta { flex-wrap: wrap; }
-  .release-row-actions { width: 100%; justify-content: flex-start; }
-  .release-row-actions .button { flex: 1 1 125px; }
-  .form-actions { grid-template-columns: 1fr; }
-  .editor-mode { align-items: flex-start; flex-direction: column; }
-  .editor-mode .button { width: 100%; }
-  .existing-asset-row { grid-template-columns: auto 1fr; }
-  .asset-remove-control { grid-column: 2; }
-}
+      connectedUser = user;
+      const permission = repo.permissions?.push || repo.permissions?.admin || repo.permissions?.maintain;
+      if (!permission) throw new Error("The token can read this repository but does not appear to have write access.");
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-}
+      setConnection("success", `Connected as ${user.login}`);
+      elements.publishButton.disabled = false;
+      updateManagementConnectionNote();
+      await loadRecentReleases();
+    } catch (error) {
+      token = "";
+      connectedUser = null;
+      elements.publishButton.disabled = true;
+      setConnection("error", error.message);
+      updateManagementConnectionNote();
+      renderRecentReleases();
+    } finally {
+      elements.connectButton.disabled = false;
+    }
+  }
 
-/* Existing application manager */
-.management-panel { margin: 18px 0; }
-.management-connection-note {
-  margin: 0 0 12px;
-  padding: 11px 13px;
-  border: 1px solid rgba(255, 190, 80, .32);
-  border-radius: 10px;
-  background: rgba(255, 190, 80, .07);
-  color: var(--muted);
-  font-size: .78rem;
-}
-.management-connection-note[data-state="connected"] {
-  border-color: rgba(77, 255, 174, .34);
-  background: rgba(77, 255, 174, .07);
-  color: var(--text);
-}
-.release-row-actions .button:disabled {
-  opacity: .48;
-  cursor: not-allowed;
-  filter: grayscale(.25);
-}
+  async function submitEditor(event) {
+    event.preventDefault();
+    clearMessage();
 
-.form-message a {
-  color: inherit;
-  font-weight: 800;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
+    if (!token || !connectedUser) return setMessage("Connect to GitHub before saving changes.", "error");
+    if (!elements.releaseForm.reportValidity()) return;
 
-.upload-help {
-  margin-top: 0.75rem;
-}
+    const files = [...elements.releaseFiles.files];
+    const oversized = files.find((file) => file.size >= MAX_ASSET_SIZE);
+    if (oversized) return setMessage(`${oversized.name} is too large. Each GitHub release asset must be smaller than 2 GiB.`, "error");
+
+    if (!["edit", "import"].includes(editorMode) && !files.length) {
+      return setMessage("Choose at least one application file for a new release.", "error");
+    }
+
+    const data = readFormData();
+    setPublishing(true);
+    resetProgress();
+
+    try {
+      if (["edit", "import"].includes(editorMode)) {
+        await updateExistingRelease(data, files);
+      } else {
+        await createNewRelease(data, files);
+      }
+      await loadRecentReleases();
+      resetEditor({ preserveMessage: true });
+    } catch (error) {
+      log(`Error: ${error.message}`, "error");
+      if (error.releaseEditUrl) {
+        setMessageWithLink(
+          `The application details were saved, but ${error.fileName || "the selected file"} could not be uploaded from this browser.`,
+          error.releaseEditUrl,
+          "Open GitHub Release and add the file"
+        );
+      } else {
+        setMessage(error.message, "error");
+      }
+      setProgress(0, "Operation failed");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function createNewRelease(data, files) {
+    const cleanVersion = data.version.replace(/^v/i, "");
+    const tag = `${data.slug}-v${cleanVersion}`;
+    const duplicate = releasesCache.find((release) => release.tag_name.toLowerCase() === tag.toLowerCase());
+    if (duplicate) throw new Error(`A release using ${tag} already exists. Choose Edit Details or enter a different version number.`);
+
+    const totalSteps = files.length + 1;
+    let completedSteps = 0;
+
+    log(`Creating release ${tag}...`);
+    setProgress(5, "Creating GitHub release...");
+
+    const release = await githubFetch(`${repoPath()}/releases`, {
+      method: "POST",
+      body: JSON.stringify({
+        tag_name: tag,
+        target_commitish: config.defaultBranch || "main",
+        name: `${data.appName} v${cleanVersion}`,
+        body: buildReleaseBody(data),
+        draft: false,
+        prerelease: data.prerelease,
+        generate_release_notes: false
+      })
+    });
+
+    completedSteps += 1;
+    log(`Release created: ${release.name}`, "success");
+
+    for (const file of files) {
+      setProgress(Math.round((completedSteps / totalSteps) * 100), `Uploading ${file.name}...`);
+      log(`Uploading ${file.name} (${formatBytes(file.size)})...`);
+      await uploadAsset(release, file);
+      completedSteps += 1;
+      setProgress(Math.round((completedSteps / totalSteps) * 100), `Uploaded ${file.name}`);
+      log(`${file.name} uploaded successfully.`, "success");
+    }
+
+    setProgress(100, "Release published successfully");
+    setMessage(`Published ${data.appName} v${cleanVersion}. The public catalog will use this as the newest visible version.`, "success");
+    log("Publishing complete.", "success");
+  }
+
+  async function updateExistingRelease(data, files) {
+    if (!selectedRelease) throw new Error("No release is selected for editing.");
+
+    const release = selectedRelease;
+    const existingByName = new Map((release.assets || []).map((asset) => [asset.name.toLowerCase(), asset]));
+    const replacedOldIds = new Set();
+    const deleteOnlyIds = [...removedAssetIds];
+    const estimatedSteps = 1 + files.length + deleteOnlyIds.length;
+    let completedSteps = 0;
+
+    setProgress(5, "Saving release details...");
+    log(`Updating ${release.name || release.tag_name}...`);
+
+    const updated = await githubFetch(`${repoPath()}/releases/${release.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        tag_name: release.tag_name,
+        target_commitish: release.target_commitish || config.defaultBranch || "main",
+        name: `${data.appName} v${data.version.replace(/^v/i, "")}`,
+        body: buildReleaseBody(data),
+        draft: false,
+        prerelease: data.prerelease
+      })
+    });
+
+    completedSteps += 1;
+    log("Application details saved.", "success");
+
+    for (const file of files) {
+      const existing = existingByName.get(file.name.toLowerCase());
+      const progress = Math.round((completedSteps / Math.max(estimatedSteps, 1)) * 100);
+      setProgress(progress, `${existing ? "Replacing" : "Uploading"} ${file.name}...`);
+
+      if (existing) {
+        log(`Replacing ${file.name} safely...`);
+        await replaceAssetSafely(updated, existing, file);
+        replacedOldIds.add(existing.id);
+        log(`${file.name} replaced successfully.`, "success");
+      } else {
+        log(`Uploading ${file.name} (${formatBytes(file.size)})...`);
+        await uploadAsset(updated, file);
+        log(`${file.name} uploaded successfully.`, "success");
+      }
+      completedSteps += 1;
+    }
+
+    for (const assetId of deleteOnlyIds) {
+      if (replacedOldIds.has(assetId)) continue;
+      const asset = (release.assets || []).find((item) => item.id === assetId);
+      setProgress(Math.round((completedSteps / Math.max(estimatedSteps, 1)) * 100), `Removing ${asset?.name || "file"}...`);
+      log(`Removing ${asset?.name || "selected file"}...`);
+      await deleteAsset(assetId);
+      completedSteps += 1;
+      log(`${asset?.name || "File"} removed.`, "success");
+    }
+
+    setProgress(100, "Changes saved successfully");
+    setMessage(`Updated ${data.appName} v${data.version.replace(/^v/i, "")}. The public website will reflect the changes after GitHub's cache refreshes.`, "success");
+    log("Update complete.", "success");
+  }
+
+  async function replaceAssetSafely(release, existingAsset, file) {
+    const temporaryName = makeTemporaryAssetName(file.name);
+    const uploaded = await uploadAsset(release, file, temporaryName);
+
+    try {
+      await deleteAsset(existingAsset.id);
+      await renameAsset(uploaded.id, file.name);
+    } catch (error) {
+      throw new Error(`${error.message} The replacement was uploaded as ${temporaryName}, so the new file was not lost.`);
+    }
+  }
+
+  async function uploadAsset(release, file, assetName = file.name) {
+    const releaseId = typeof release === "object" ? release.id : release;
+    const template = typeof release === "object" ? release.upload_url : "";
+    const baseUrl = template
+      ? template.replace(/\{\?name(?:,label)?\}$/, "")
+      : `https://uploads.github.com/repos/${encodeURIComponent(config.githubOwner)}/${encodeURIComponent(config.githubRepository)}/releases/${releaseId}/assets`;
+    const url = `${baseUrl}?name=${encodeURIComponent(assetName)}`;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        mode: "cors",
+        cache: "no-store",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+          // Do not send X-GitHub-Api-Version to uploads.github.com. Some browsers
+          // reject the CORS preflight when that extra header is present.
+          "Content-Type": "application/octet-stream"
+        },
+        body: file
+      });
+
+      if (!response.ok) {
+        const detail = await safeJson(response);
+        if (response.status === 422) {
+          throw new Error(`${assetName} already exists on this release or GitHub rejected the asset.`);
+        }
+        throw new Error(detail.message || `Upload failed with HTTP ${response.status}.`);
+      }
+      return response.json();
+    } catch (error) {
+      if (error instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(error.message || "")) {
+        const fallback = releaseEditUrl(release);
+        const uploadError = new Error(
+          `The release details were saved, but the browser could not upload ${assetName} to GitHub's release-asset server. ` +
+          `Open ${fallback} and drag the file into the Assets area, then save the release.`
+        );
+        uploadError.releaseEditUrl = fallback;
+        uploadError.fileName = assetName;
+        throw uploadError;
+      }
+      throw error;
+    }
+  }
+
+  async function renameAsset(assetId, name) {
+    return githubFetch(`${repoPath()}/releases/assets/${assetId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name })
+    });
+  }
+
+  async function deleteAsset(assetId) {
+    return githubFetch(`${repoPath()}/releases/assets/${assetId}`, { method: "DELETE" });
+  }
+
+  async function loadRecentReleases() {
+    elements.refreshReleases.disabled = true;
+    elements.recentReleases.innerHTML = '<p class="muted-text">Loading releases...</p>';
+    try {
+      releasesCache = await githubFetch(`${repoPath()}/releases?per_page=100`);
+      renderRecentReleases();
+    } catch (error) {
+      elements.recentReleases.innerHTML = `<p class="error-text">${escapeHtml(error.message)}</p>`;
+    } finally {
+      elements.refreshReleases.disabled = false;
+    }
+  }
+
+  function renderRecentReleases() {
+    updateManagementConnectionNote();
+    if (!releasesCache.length) {
+      elements.recentReleases.innerHTML = '<p class="muted-text">No releases have been published yet.</p>';
+      return;
+    }
+
+    const latestBySlug = new Map();
+    releasesCache.forEach((release) => {
+      const meta = parseMetadata(release.body || "");
+      if (!meta?.slug) return;
+      const existing = latestBySlug.get(meta.slug);
+      if (!existing || new Date(release.published_at || release.created_at) > new Date(existing.published_at || existing.created_at)) {
+        latestBySlug.set(meta.slug, release);
+      }
+    });
+
+    elements.recentReleases.innerHTML = releasesCache.map((release) => {
+      const meta = parseMetadata(release.body || "");
+      const managed = Boolean(meta);
+      const version = managed ? String(meta.version || "").replace(/^v/i, "") : release.tag_name;
+      const name = managed ? (meta.appName || release.name || release.tag_name) : (release.name || release.tag_name);
+      const isNewest = managed && latestBySlug.get(meta.slug)?.id === release.id;
+      const visible = managed && meta.display !== false;
+      const fileCount = release.assets?.length || 0;
+      const actionLock = connectedUser ? "" : ' disabled aria-disabled="true" title="Connect to GitHub to enable this action"';
+
+      return `
+        <article class="release-row" data-release-id="${release.id}">
+          <div class="release-row-main">
+            <div>
+              <strong>${escapeHtml(name)}</strong>
+              <span>${escapeHtml(managed ? `v${version} · ${meta.slug}` : release.tag_name)} · ${formatDate(release.published_at || release.created_at)}</span>
+            </div>
+            <div class="release-statuses">
+              ${managed ? '<span class="badge badge-success">Managed</span>' : '<span class="badge badge-muted">Manual Release</span>'}
+              ${isNewest ? '<span class="badge badge-info">Newest</span>' : ""}
+              ${managed && !visible ? '<span class="badge badge-warning">Hidden</span>' : ""}
+              ${release.draft ? '<span class="badge badge-warning">Draft</span>' : ""}
+              ${release.prerelease ? '<span class="badge badge-warning">Pre-release</span>' : ""}
+            </div>
+          </div>
+          <div class="release-row-meta">
+            <span>${fileCount} file${fileCount === 1 ? "" : "s"}</span>
+            <a href="${escapeAttribute(release.html_url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>
+          </div>
+          <div class="release-row-actions">
+            ${managed
+              ? `<button class="button button-secondary button-small" type="button" data-action="edit" data-release-id="${release.id}"${actionLock}>Edit Details</button>
+                 <button class="button button-secondary button-small" type="button" data-action="new-version" data-release-id="${release.id}"${actionLock}>New Version</button>`
+              : `<button class="button button-secondary button-small" type="button" data-action="import" data-release-id="${release.id}"${actionLock}>Add to Website</button>`}
+            <button class="button button-danger button-small" type="button" data-action="delete" data-release-id="${release.id}"${actionLock}>Delete</button>
+          </div>
+        </article>`;
+    }).join("");
+  }
+
+  function handleReleaseAction(event) {
+    const button = event.target.closest("button[data-action]");
+    if (!button || button.disabled) return;
+    const releaseId = Number(button.dataset.releaseId);
+    const action = button.dataset.action;
+    if (action === "edit") beginEditRelease(releaseId);
+    if (action === "new-version") beginNewVersion(releaseId);
+    if (action === "import") beginImportRelease(releaseId);
+    if (action === "delete") deleteRelease(releaseId);
+  }
+
+  function beginEditRelease(releaseId) {
+    const release = releasesCache.find((item) => item.id === releaseId);
+    const meta = release ? parseMetadata(release.body || "") : null;
+    if (!release || !meta) return setMessage("This release does not contain website metadata and cannot be edited from the console.", "error");
+
+    editorMode = "edit";
+    selectedRelease = release;
+    removedAssetIds.clear();
+    fillEditor(meta, release);
+
+    elements.editorTitle.textContent = "Edit Application";
+    elements.editorSubtitle.textContent = "Change the current app card, visibility, or attached files";
+    elements.editorMode.hidden = false;
+    elements.editorModeTitle.textContent = "Editing existing release";
+    elements.editorModeDetail.textContent = `${meta.appName} v${String(meta.version || "").replace(/^v/i, "")}`;
+    elements.appSlug.disabled = true;
+    elements.version.disabled = true;
+    elements.releaseFiles.required = false;
+    elements.publishButton.textContent = "Save Changes";
+    renderExistingAssets(release.assets || []);
+    clearSelectedFiles();
+    clearMessage();
+    scrollToEditor();
+  }
+
+  function beginImportRelease(releaseId) {
+    const release = releasesCache.find((item) => item.id === releaseId);
+    if (!release) return setMessage("The selected GitHub release could not be found.", "error");
+
+    const appName = deriveApplicationName(release.name || release.tag_name);
+    const version = deriveVersion(release.tag_name, release.name);
+    const plainBody = cleanReleaseText(release.body || "");
+    const meta = {
+      appName,
+      slug: normalizeSlug(appName || release.tag_name),
+      version,
+      category: "Other",
+      platform: "Windows",
+      icon: "code",
+      summary: plainBody.split(/\r?\n/).find(Boolean)?.slice(0, 180) || `${appName} is available for download.`,
+      description: plainBody,
+      requirements: [],
+      releaseNotes: plainBody,
+      display: true
+    };
+
+    editorMode = "import";
+    selectedRelease = release;
+    removedAssetIds.clear();
+    fillEditor(meta, release);
+
+    elements.editorTitle.textContent = "Add Release to Website";
+    elements.editorSubtitle.textContent = "Add website metadata to a release created directly on GitHub";
+    elements.editorMode.hidden = false;
+    elements.editorModeTitle.textContent = "Importing manual GitHub release";
+    elements.editorModeDetail.textContent = release.tag_name;
+    elements.appSlug.disabled = false;
+    elements.version.disabled = false;
+    elements.releaseFiles.required = false;
+    elements.publishButton.textContent = "Add Release to Website";
+    renderExistingAssets(release.assets || []);
+    clearSelectedFiles();
+    clearMessage();
+    scrollToEditor();
+  }
+
+  function beginNewVersion(releaseId) {
+    const release = releasesCache.find((item) => item.id === releaseId);
+    const meta = release ? parseMetadata(release.body || "") : null;
+    if (!release || !meta) return setMessage("This release does not contain website metadata and cannot be used as a version template.", "error");
+
+    editorMode = "new-version";
+    selectedRelease = release;
+    removedAssetIds.clear();
+    fillEditor(meta, release);
+
+    elements.version.value = "";
+    elements.releaseNotes.value = "";
+    elements.latest.checked = true;
+    elements.editorTitle.textContent = "Publish New Version";
+    elements.editorSubtitle.textContent = "Reuse the app details and upload a newer build";
+    elements.editorMode.hidden = false;
+    elements.editorModeTitle.textContent = "Creating a new version";
+    elements.editorModeDetail.textContent = `${meta.appName} · current version v${String(meta.version || "").replace(/^v/i, "")}`;
+    elements.appSlug.disabled = true;
+    elements.version.disabled = false;
+    elements.releaseFiles.required = false;
+    elements.publishButton.textContent = "Publish New Version";
+    elements.existingAssetsPanel.hidden = true;
+    elements.existingAssets.innerHTML = "";
+    clearSelectedFiles();
+    clearMessage();
+    scrollToEditor();
+    elements.version.focus();
+  }
+
+  function fillEditor(meta, release) {
+    elements.releaseForm.reset();
+    elements.appName.value = meta.appName || release.name || "";
+    elements.appSlug.value = normalizeSlug(meta.slug || "");
+    elements.appSlug.dataset.edited = "true";
+    elements.version.value = String(meta.version || "").replace(/^v/i, "");
+    setSelectValue(elements.category, meta.category || "Other");
+    setSelectValue(elements.platform, meta.platform || "Windows");
+    setSelectValue(elements.icon, meta.icon || "code");
+    elements.summary.value = meta.summary || "";
+    elements.description.value = meta.description || "";
+    elements.requirements.value = Array.isArray(meta.requirements) ? meta.requirements.join("\n") : String(meta.requirements || "");
+    elements.releaseNotes.value = meta.releaseNotes || "";
+    elements.prerelease.checked = Boolean(release.prerelease);
+    elements.latest.checked = meta.display !== false;
+  }
+
+  function resetEditor(options = {}) {
+    editorMode = "create";
+    selectedRelease = null;
+    removedAssetIds.clear();
+    elements.releaseForm.reset();
+    elements.appSlug.disabled = false;
+    elements.version.disabled = false;
+    elements.appSlug.dataset.edited = "false";
+    elements.releaseFiles.required = false;
+    elements.latest.checked = true;
+    elements.editorTitle.textContent = "Publish Application";
+    elements.editorSubtitle.textContent = "Create a new app or release version";
+    elements.editorMode.hidden = true;
+    elements.editorModeDetail.textContent = "";
+    elements.publishButton.textContent = "Publish Release & Upload Files";
+    elements.publishButton.disabled = !connectedUser;
+    elements.existingAssetsPanel.hidden = true;
+    elements.existingAssets.innerHTML = "";
+    elements.fileList.innerHTML = "";
+    elements.publishProgress.hidden = true;
+    if (!options.preserveMessage && !options.clearMessage) clearMessage();
+    if (options.clearMessage) clearMessage();
+  }
+
+  function renderExistingAssets(assets) {
+    elements.existingAssetsPanel.hidden = false;
+    if (!assets.length) {
+      elements.existingAssets.innerHTML = '<p class="muted-text">This release has no attached files.</p>';
+      return;
+    }
+
+    elements.existingAssets.innerHTML = assets.map((asset) => `
+      <label class="existing-asset-row" data-asset-id="${asset.id}">
+        <span class="file-type">${escapeHtml(fileExtension(asset.name))}</span>
+        <span><strong>${escapeHtml(asset.name)}</strong><small>${formatBytes(asset.size)} · ${formatNumber(asset.download_count || 0)} downloads</small></span>
+        <span class="asset-remove-control"><input type="checkbox" data-remove-asset="${asset.id}"> Remove</span>
+      </label>`).join("");
+  }
+
+  function handleAssetRemovalToggle(event) {
+    const checkbox = event.target.closest("input[data-remove-asset]");
+    if (!checkbox) return;
+    const assetId = Number(checkbox.dataset.removeAsset);
+    const row = checkbox.closest(".existing-asset-row");
+    if (checkbox.checked) {
+      removedAssetIds.add(assetId);
+      row?.classList.add("is-removed");
+    } else {
+      removedAssetIds.delete(assetId);
+      row?.classList.remove("is-removed");
+    }
+  }
+
+  async function deleteRelease(releaseId) {
+    if (!token || !connectedUser) return setMessage("Connect to GitHub before deleting a release.", "error");
+    const release = releasesCache.find((item) => item.id === releaseId);
+    if (!release) return;
+
+    const label = release.name || release.tag_name;
+    const confirmed = window.confirm(`Delete "${label}" and all files attached to it?\n\nThis cannot be undone from the website.`);
+    if (!confirmed) return;
+
+    setMessage(`Deleting ${label}...`, "success");
+    setReleaseActionsDisabled(true);
+    try {
+      await githubFetch(`${repoPath()}/releases/${releaseId}`, { method: "DELETE" });
+      if (selectedRelease?.id === releaseId) resetEditor({ preserveMessage: true });
+      setMessage(`Deleted ${label}. The Git tag may remain in GitHub, but it will no longer appear as a release or on the website.`, "success");
+      await loadRecentReleases();
+    } catch (error) {
+      setMessage(error.message, "error");
+    } finally {
+      setReleaseActionsDisabled(false);
+    }
+  }
+
+  function readFormData() {
+    return {
+      appName: elements.appName.value.trim(),
+      slug: normalizeSlug(elements.appSlug.value),
+      version: elements.version.value.trim(),
+      category: elements.category.value,
+      platform: elements.platform.value,
+      icon: elements.icon.value,
+      summary: elements.summary.value.trim(),
+      description: elements.description.value.trim(),
+      requirements: splitLines(elements.requirements.value),
+      releaseNotes: elements.releaseNotes.value.trim(),
+      prerelease: elements.prerelease.checked,
+      display: elements.latest.checked
+    };
+  }
+
+  function buildReleaseBody(data) {
+    const metadata = JSON.stringify(data, null, 2);
+    const requirements = data.requirements.length
+      ? data.requirements.map((line) => `- ${line}`).join("\n")
+      : "- No special requirements listed.";
+    const notes = data.releaseNotes || "No release notes were provided.";
+    const description = data.description || data.summary;
+
+    return `<!-- DOWNLOAD_PORTAL_META\n${metadata}\nDOWNLOAD_PORTAL_META -->\n\n# ${data.appName} v${data.version.replace(/^v/i, "")}\n\n${description}\n\n## System Requirements\n\n${requirements}\n\n## Release Notes\n\n${notes}\n`;
+  }
+
+  function parseMetadata(body) {
+    const match = String(body || "").match(/<!--\s*DOWNLOAD_PORTAL_META\s*([\s\S]*?)\s*DOWNLOAD_PORTAL_META\s*-->/i);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[1]);
+    } catch {
+      return null;
+    }
+  }
+
+  async function githubFetch(path, options = {}) {
+    const headers = {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": API_VERSION,
+      ...(options.headers || {})
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers
+    });
+
+    if (!response.ok) {
+      const detail = await safeJson(response);
+      const permissionHint = [401, 403, 404].includes(response.status)
+        ? " Check the token's repository selection and Contents permission."
+        : "";
+      throw new Error(`${detail.message || `GitHub returned HTTP ${response.status}`}.${permissionHint}`);
+    }
+    if (response.status === 204) return null;
+    return response.json();
+  }
+
+  function renderFileList() {
+    const files = [...elements.releaseFiles.files];
+    if (!files.length) {
+      elements.fileList.innerHTML = "";
+      return;
+    }
+
+    const existingNames = new Set((selectedRelease?.assets || []).map((asset) => asset.name.toLowerCase()));
+    elements.fileList.innerHTML = files.map((file) => {
+      const replacing = editorMode === "edit" && existingNames.has(file.name.toLowerCase());
+      return `
+        <div class="file-row ${file.size >= MAX_ASSET_SIZE ? "file-error" : ""}">
+          <span class="file-type">${escapeHtml(fileExtension(file.name))}</span>
+          <span><strong>${escapeHtml(file.name)}</strong><small>${formatBytes(file.size)}</small></span>
+          <span>${file.size >= MAX_ASSET_SIZE ? "Too large" : replacing ? "Will replace" : "Ready"}</span>
+        </div>`;
+    }).join("");
+  }
+
+  function clearSelectedFiles() {
+    elements.releaseFiles.value = "";
+    elements.fileList.innerHTML = "";
+  }
+
+  function autoSlug() {
+    if (elements.appSlug.dataset.edited === "true" || editorMode !== "create") return;
+    elements.appSlug.value = normalizeSlug(elements.appName.value);
+  }
+
+  function normalizeSlugInput() {
+    elements.appSlug.dataset.edited = "true";
+    elements.appSlug.value = normalizeSlug(elements.appSlug.value);
+  }
+
+  function normalizeSlug(value) {
+    return String(value || "")
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60);
+  }
+
+  function setSelectValue(select, value) {
+    const text = String(value || "");
+    let option = [...select.options].find((item) => item.value === text);
+    if (!option && text) {
+      option = document.createElement("option");
+      option.value = text;
+      option.textContent = text;
+      select.appendChild(option);
+    }
+    select.value = text;
+  }
+
+  function updateManagementConnectionNote() {
+    if (!elements.managementConnectionNote) return;
+    if (connectedUser) {
+      elements.managementConnectionNote.dataset.state = "connected";
+      elements.managementConnectionNote.textContent = `Editing controls are enabled. Connected as ${connectedUser.login}.`;
+    } else {
+      elements.managementConnectionNote.dataset.state = "locked";
+      elements.managementConnectionNote.textContent = "Published releases are listed below. Enter your token and select Test Connection to enable Edit Details, New Version, and Delete.";
+    }
+  }
+
+  function setConnection(type, message) {
+    elements.connectionStatus.dataset.state = type;
+    elements.connectionStatus.textContent = message;
+  }
+
+  function setPublishing(active) {
+    elements.publishButton.disabled = active || !connectedUser;
+    elements.connectButton.disabled = active;
+    elements.refreshReleases.disabled = active;
+    elements.cancelEdit.disabled = active;
+    elements.clearForm.disabled = active;
+    elements.releaseForm.querySelectorAll("input, textarea, select, button").forEach((field) => {
+      if (field.id !== "publish-button" && field.id !== "clear-form") field.disabled = active;
+    });
+
+    if (!active) {
+      elements.appSlug.disabled = editorMode === "edit" || editorMode === "new-version";
+      elements.version.disabled = editorMode === "edit";
+      elements.cancelEdit.disabled = false;
+      elements.clearForm.disabled = false;
+    } else {
+      elements.publishProgress.hidden = false;
+    }
+    setReleaseActionsDisabled(active);
+  }
+
+  function setReleaseActionsDisabled(disabled) {
+    elements.recentReleases.querySelectorAll("button[data-action]").forEach((button) => {
+      if (disabled) {
+        button.dataset.wasDisabled = String(button.disabled);
+        button.disabled = true;
+      } else if (Object.prototype.hasOwnProperty.call(button.dataset, "wasDisabled")) {
+        button.disabled = button.dataset.wasDisabled === "true";
+        delete button.dataset.wasDisabled;
+      }
+    });
+  }
+
+  function resetProgress() {
+    elements.publishLog.innerHTML = "";
+    elements.publishProgress.hidden = false;
+    setProgress(0, "Preparing...");
+  }
+
+  function setProgress(percent, label) {
+    const safePercent = Math.max(0, Math.min(100, percent));
+    elements.progressBar.style.width = `${safePercent}%`;
+    elements.progressPercent.textContent = `${safePercent}%`;
+    elements.progressLabel.textContent = label;
+  }
+
+  function log(message, type = "info") {
+    const line = document.createElement("p");
+    line.dataset.type = type;
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    elements.publishLog.appendChild(line);
+    elements.publishLog.scrollTop = elements.publishLog.scrollHeight;
+  }
+
+  function setMessage(message, type) {
+    elements.formMessage.dataset.state = type;
+    elements.formMessage.textContent = message;
+  }
+
+  function setMessageWithLink(message, url, linkText) {
+    elements.formMessage.dataset.state = "error";
+    elements.formMessage.textContent = "";
+
+    const text = document.createElement("span");
+    text.textContent = `${message} `;
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = linkText;
+
+    elements.formMessage.append(text, link);
+  }
+
+  function clearMessage() {
+    elements.formMessage.textContent = "";
+    delete elements.formMessage.dataset.state;
+  }
+
+  function splitLines(value) {
+    return String(value || "").split(/\r?\n/).map((line) => line.replace(/^[-*]\s*/, "").trim()).filter(Boolean);
+  }
+
+  function isConfigured() {
+    return config.githubOwner && config.githubRepository && config.githubOwner !== "OWNER" && config.githubRepository !== "REPOSITORY";
+  }
+
+  function repoPath() {
+    return `/repos/${encodeURIComponent(config.githubOwner)}/${encodeURIComponent(config.githubRepository)}`;
+  }
+
+  function releaseEditUrl(release) {
+    const tag = typeof release === "object" ? release.tag_name : "";
+    if (tag) {
+      return `https://github.com/${encodeURIComponent(config.githubOwner)}/${encodeURIComponent(config.githubRepository)}/releases/edit/${encodeURIComponent(tag)}`;
+    }
+    return `https://github.com/${encodeURIComponent(config.githubOwner)}/${encodeURIComponent(config.githubRepository)}/releases`;
+  }
+
+  function makeTemporaryAssetName(name) {
+    const dotIndex = name.lastIndexOf(".");
+    const timestamp = Date.now();
+    if (dotIndex <= 0) return `${name}.replacement-${timestamp}`;
+    return `${name.slice(0, dotIndex)}.replacement-${timestamp}${name.slice(dotIndex)}`;
+  }
+
+  function deriveApplicationName(value) {
+    return String(value || "Application")
+      .replace(/\s+v?\d+(?:\.\d+){0,3}(?:[-+][\w.-]+)?\s*$/i, "")
+      .trim() || "Application";
+  }
+
+  function deriveVersion(...values) {
+    for (const value of values) {
+      const match = String(value || "").match(/(?:^|[-_\s])v?(\d+(?:\.\d+){0,3}(?:[-+][\w.-]+)?)$/i);
+      if (match) return match[1];
+    }
+    return "1.0.0";
+  }
+
+  function cleanReleaseText(value) {
+    return String(value || "")
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/\*\*/g, "")
+      .replace(/^[-*]\s+/gm, "")
+      .trim();
+  }
+
+  function scrollToEditor() {
+    document.querySelector(".release-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function toCamel(value) {
+    return value.replace(/-([a-z])/g, (_, char) => char.toUpperCase());
+  }
+
+  function fileExtension(name) {
+    const extension = name.includes(".") ? name.split(".").pop() : "FILE";
+    return extension.slice(0, 5).toUpperCase();
+  }
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+  }
+
+  function formatNumber(value) {
+    return Number(value || 0).toLocaleString();
+  }
+
+  function formatDate(value) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "Unknown date" : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+  }
+
+  function escapeAttribute(value) {
+    return escapeHtml(value);
+  }
+
+  async function safeJson(response) {
+    try { return await response.json(); } catch { return {}; }
+  }
+})();
