@@ -37,6 +37,21 @@
       </div>
     </div>
 
+    <section class="admin-panel recent-panel management-panel" id="manage-apps">
+      <div class="panel-heading">
+        <span class="step-number">02</span>
+        <div><h2>Existing Applications</h2><p>Select a published release to edit, update, or remove</p></div>
+        <button id="refresh-releases" class="button button-secondary button-small" type="button">Refresh</button>
+      </div>
+      <div id="management-connection-note" class="management-connection-note">
+        Published releases are shown below. Connect with your GitHub token to enable editing controls.
+      </div>
+      <p class="management-help">Use <strong>Edit Details</strong> to change the app card or files. Use <strong>New Version</strong> for an updated build such as v1.1.0. Releases created directly on GitHub can be imported with <strong>Add to Website</strong>.</p>
+      <div id="recent-releases" class="recent-releases">
+        <p class="muted-text">Loading published releases...</p>
+      </div>
+    </section>
+
     <section class="admin-layout">
       <aside class="admin-sidebar">
         <div class="admin-panel">
@@ -65,7 +80,7 @@
 
       <section class="admin-panel release-panel">
         <div class="panel-heading">
-          <span class="step-number">02</span>
+          <span class="step-number">03</span>
           <div><h2 id="editor-title">Publish Application</h2><p id="editor-subtitle">Create a new app or release version</p></div>
         </div>
 
@@ -167,6 +182,7 @@
             <small>GitHub allows release assets smaller than 2 GiB each.</small>
           </label>
           <div id="file-list" class="file-list"></div>
+          <p class="field-help upload-help">The publisher will try to upload installers directly. If your browser or network blocks an <code>.exe</code> upload, it will provide a button that opens the matching GitHub Release so you can drag the installer into GitHub's Assets area.</p>
 
           <div class="release-options">
             <label class="checkbox-label"><input id="prerelease" type="checkbox"> Mark as pre-release</label>
@@ -191,17 +207,6 @@
       </section>
     </section>
 
-    <section class="admin-panel recent-panel">
-      <div class="panel-heading">
-        <span class="step-number">03</span>
-        <div><h2>Manage Apps & Releases</h2><p>Edit details, publish updates, replace files, or remove releases</p></div>
-        <button id="refresh-releases" class="button button-secondary button-small" type="button">Refresh</button>
-      </div>
-      <p class="management-help">Use <strong>Edit Details</strong> to change the app card or files. Use <strong>New Version</strong> for an updated build such as v1.1.0. Releases created directly on GitHub can be imported with <strong>Add to Website</strong>.</p>
-      <div id="recent-releases" class="recent-releases">
-        <p class="muted-text">Connect to GitHub to view recent releases.</p>
-      </div>
-    </section>
   </main>
 
   <footer class="site-footer shell">
