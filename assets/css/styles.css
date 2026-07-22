@@ -441,3 +441,36 @@ input:disabled, select:disabled, textarea:disabled { opacity: .62; cursor: not-a
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Existing application manager */
+.management-panel { margin: 18px 0; }
+.management-connection-note {
+  margin: 0 0 12px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 190, 80, .32);
+  border-radius: 10px;
+  background: rgba(255, 190, 80, .07);
+  color: var(--muted);
+  font-size: .78rem;
+}
+.management-connection-note[data-state="connected"] {
+  border-color: rgba(77, 255, 174, .34);
+  background: rgba(77, 255, 174, .07);
+  color: var(--text);
+}
+.release-row-actions .button:disabled {
+  opacity: .48;
+  cursor: not-allowed;
+  filter: grayscale(.25);
+}
+
+.form-message a {
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.upload-help {
+  margin-top: 0.75rem;
+}
