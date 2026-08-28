@@ -30,6 +30,7 @@
       publishedAt: new Date().toISOString(),
       totalDownloads: 0,
       assets: [],
+      screenshots: [],
       htmlUrl: "#",
       isDemo: true
     },
@@ -47,6 +48,7 @@
       publishedAt: new Date(Date.now() - 86400000 * 14).toISOString(),
       totalDownloads: 0,
       assets: [],
+      screenshots: [],
       htmlUrl: "#",
       isDemo: true
     },
@@ -64,6 +66,7 @@
       publishedAt: new Date(Date.now() - 86400000 * 30).toISOString(),
       totalDownloads: 0,
       assets: [],
+      screenshots: [],
       htmlUrl: "#",
       isDemo: true
     }
@@ -142,11 +145,14 @@
     }));
 
     document.addEventListener("keydown", (event) => {
+      const lightbox = document.getElementById("screenshot-lightbox");
+      if (lightbox?.open && event.key === "ArrowLeft") { event.preventDefault(); changeScreenshot(-1); return; }
+      if (lightbox?.open && event.key === "ArrowRight") { event.preventDefault(); changeScreenshot(1); return; }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         elements.search.focus();
       }
-      if (event.key === "Escape" && elements.modal.open) elements.modal.close();
+      if (event.key === "Escape" && elements.modal.open && !lightbox?.open) elements.modal.close();
     });
   }
 
@@ -213,6 +219,23 @@
         if (!meta || meta.display === false) return;
 
         const slug = cleanText(meta.slug || release.tag_name || "application", 60);
+        const allAssets = (release.assets || []).map((asset) => ({
+          id: asset.id,
+          name: cleanText(asset.name, 255),
+          url: asset.browser_download_url,
+          size: Number(asset.size || 0),
+          downloads: Number(asset.download_count || 0),
+          contentType: asset.content_type || "application/octet-stream"
+        }));
+        const screenshotEntries = normalizeScreenshotEntries(meta.screenshots);
+        const legacyScreenshotNames = new Set(screenshotEntries.filter((entry) => !entry.path).map((entry) => entry.name.toLowerCase()));
+        const screenshots = screenshotEntries.map((entry) => {
+          if (entry.path) return { name: entry.name, url: encodeRelativePath(entry.path) };
+          const asset = allAssets.find((item) => item.name.toLowerCase() === entry.name.toLowerCase() && isImageAsset(item));
+          return asset ? { name: asset.name, url: asset.url } : null;
+        }).filter(Boolean);
+        const downloadableAssets = allAssets.filter((asset) => !legacyScreenshotNames.has(asset.name.toLowerCase()));
+
         const app = {
           slug,
           name: cleanText(meta.appName || release.name || slug, 80),
@@ -225,15 +248,9 @@
           requirements: normalizeLines(meta.requirements),
           releaseNotes: cleanText(meta.releaseNotes || stripMetadata(release.body || ""), 5000),
           publishedAt: release.published_at || release.created_at,
-          totalDownloads: (release.assets || []).reduce((total, asset) => total + Number(asset.download_count || 0), 0),
-          assets: (release.assets || []).map((asset) => ({
-            id: asset.id,
-            name: cleanText(asset.name, 255),
-            url: asset.browser_download_url,
-            size: Number(asset.size || 0),
-            downloads: Number(asset.download_count || 0),
-            contentType: asset.content_type || "application/octet-stream"
-          })),
+          totalDownloads: downloadableAssets.reduce((total, asset) => total + asset.downloads, 0),
+          assets: downloadableAssets,
+          screenshots,
           htmlUrl: release.html_url,
           prerelease: Boolean(release.prerelease),
           isDemo: false
@@ -270,6 +287,37 @@
     if (Array.isArray(value)) return value.map((line) => cleanText(line, 200)).filter(Boolean);
     if (typeof value !== "string") return [];
     return value.split(/\r?\n/).map((line) => cleanText(line.replace(/^[-*]\s*/, ""), 200)).filter(Boolean);
+  }
+
+  function normalizeScreenshotEntries(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set();
+    const entries = [];
+    value.forEach((item) => {
+      const entry = typeof item === "string"
+        ? { name: cleanText(item, 255), path: "" }
+        : { name: cleanText(item?.name || "", 255), path: cleanPath(item?.path || "") };
+      if (!entry.name) return;
+      const key = (entry.path || entry.name).toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      entries.push(entry);
+    });
+    return entries;
+  }
+
+  function cleanPath(value) {
+    return String(value || "").replace(/\\/g, "/").replace(/^\/+/, "").replace(/\.\.(?:\/|$)/g, "").trim();
+  }
+
+  function encodeRelativePath(path) {
+    return cleanPath(path).split("/").filter(Boolean).map((part) => encodeURIComponent(part)).join("/");
+  }
+
+  function isImageAsset(asset) {
+    const type = String(asset?.contentType || "").toLowerCase();
+    const name = String(asset?.name || "").toLowerCase();
+    return type.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(name);
   }
 
   function cleanText(value, maxLength = 500) {
@@ -371,6 +419,19 @@
       ? `<ul>${app.requirements.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
       : "<p>No special requirements listed.</p>";
 
+    const screenshots = app.screenshots?.length
+      ? `<section class="screenshots-section">
+          <h3>Screenshots</h3>
+          <div class="screenshot-gallery" aria-label="Application screenshots">
+            ${app.screenshots.map((shot, index) => `
+              <button class="screenshot-thumb" type="button" data-screenshot-index="${index}" aria-label="Enlarge screenshot ${index + 1} of ${app.screenshots.length}">
+                <img src="${escapeAttribute(shot.url)}" alt="${escapeAttribute(`${app.name} screenshot ${index + 1}`)}" loading="lazy">
+                <span>View ${index + 1}</span>
+              </button>`).join("")}
+          </div>
+        </section>`
+      : "";
+
     elements.modalContent.innerHTML = `
       <div class="modal-app-header">
         <div class="app-icon large" data-icon="${escapeAttribute(app.icon)}">${iconMap[app.icon] || iconMap.code}</div>
@@ -385,11 +446,76 @@
         <section><h3>About</h3><p class="preserve-lines">${escapeHtml(app.description || app.summary)}</p></section>
         <section><h3>System Requirements</h3>${requirements}</section>
         <section><h3>Release Notes</h3><p class="preserve-lines">${escapeHtml(app.releaseNotes || "No release notes were provided.")}</p></section>
+        ${screenshots}
         <section class="files-section"><h3>Available Files</h3><div class="asset-list">${files}</div></section>
       </div>
       ${!app.isDemo && app.htmlUrl ? `<a class="release-link" href="${escapeAttribute(app.htmlUrl)}" target="_blank" rel="noopener noreferrer">View complete release on GitHub ↗</a>` : ""}
     `;
+
+    elements.modalContent.querySelectorAll("[data-screenshot-index]").forEach((button) => {
+      button.addEventListener("click", () => openScreenshotLightbox(app, Number(button.dataset.screenshotIndex)));
+    });
+
     elements.modal.showModal();
+  }
+
+  let lightboxScreenshots = [];
+  let lightboxIndex = 0;
+  let lightboxAppName = "Application";
+
+  function ensureScreenshotLightbox() {
+    let lightbox = document.getElementById("screenshot-lightbox");
+    if (lightbox) return lightbox;
+
+    lightbox = document.createElement("dialog");
+    lightbox.id = "screenshot-lightbox";
+    lightbox.className = "screenshot-lightbox";
+    lightbox.setAttribute("aria-label", "Screenshot viewer");
+    lightbox.innerHTML = `
+      <button class="screenshot-lightbox-close" type="button" aria-label="Close screenshot viewer">×</button>
+      <button class="screenshot-nav screenshot-nav-prev" type="button" aria-label="Previous screenshot">‹</button>
+      <figure>
+        <img class="screenshot-lightbox-image" alt="">
+        <figcaption><span class="screenshot-lightbox-count"></span><span class="screenshot-lightbox-name"></span></figcaption>
+      </figure>
+      <button class="screenshot-nav screenshot-nav-next" type="button" aria-label="Next screenshot">›</button>`;
+
+    document.body.appendChild(lightbox);
+    lightbox.querySelector(".screenshot-lightbox-close").addEventListener("click", () => lightbox.close());
+    lightbox.querySelector(".screenshot-nav-prev").addEventListener("click", () => changeScreenshot(-1));
+    lightbox.querySelector(".screenshot-nav-next").addEventListener("click", () => changeScreenshot(1));
+    lightbox.addEventListener("click", (event) => { if (event.target === lightbox) lightbox.close(); });
+    lightbox.addEventListener("cancel", (event) => { event.preventDefault(); lightbox.close(); });
+    return lightbox;
+  }
+
+  function openScreenshotLightbox(app, index) {
+    if (!app.screenshots?.length) return;
+    lightboxScreenshots = app.screenshots;
+    lightboxIndex = Math.max(0, Math.min(index, lightboxScreenshots.length - 1));
+    lightboxAppName = app.name || "Application";
+    const lightbox = ensureScreenshotLightbox();
+    renderScreenshotLightbox();
+    lightbox.showModal();
+  }
+
+  function changeScreenshot(direction) {
+    if (lightboxScreenshots.length < 2) return;
+    lightboxIndex = (lightboxIndex + direction + lightboxScreenshots.length) % lightboxScreenshots.length;
+    renderScreenshotLightbox();
+  }
+
+  function renderScreenshotLightbox() {
+    const lightbox = ensureScreenshotLightbox();
+    const shot = lightboxScreenshots[lightboxIndex];
+    if (!shot) return;
+    const image = lightbox.querySelector(".screenshot-lightbox-image");
+    image.src = shot.url;
+    image.alt = `${lightboxAppName} screenshot ${lightboxIndex + 1}`;
+    lightbox.querySelector(".screenshot-lightbox-count").textContent = `${lightboxIndex + 1} / ${lightboxScreenshots.length}`;
+    lightbox.querySelector(".screenshot-lightbox-name").textContent = shot.name;
+    lightbox.querySelector(".screenshot-nav-prev").disabled = lightboxScreenshots.length < 2;
+    lightbox.querySelector(".screenshot-nav-next").disabled = lightboxScreenshots.length < 2;
   }
 
   function selectPrimaryAsset(assets) {
