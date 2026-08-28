@@ -15,8 +15,7 @@
     code: "{ }"
   };
 
-  const demoApps = [
-    {
+  const demoApps = [{
       slug: "daily-ops-report-bot",
       name: "Daily Ops Report Bot",
       version: "1.0.0",
