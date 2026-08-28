@@ -46,7 +46,7 @@
       <div id="management-connection-note" class="management-connection-note">
         Published releases are shown below. Connect with your GitHub token to enable editing controls.
       </div>
-      <p class="management-help">Use <strong>Edit Details</strong> to change the app card or files. Use <strong>New Version</strong> for an updated build such as v1.1.0. Releases created directly on GitHub can be imported with <strong>Add to Website</strong>.</p>
+      <p class="management-help">Use <strong>Edit Details</strong> to change the app card, screenshots, or files. Use <strong>New Version</strong> for an updated build such as v1.1.0. Releases created directly on GitHub can be imported with <strong>Add to Website</strong>.</p>
       <div id="recent-releases" class="recent-releases">
         <p class="muted-text">Loading published releases...</p>
       </div>
@@ -166,6 +166,31 @@
               <textarea id="release-notes" name="releaseNotes" rows="4" placeholder="Added feature...&#10;Improved performance...&#10;Fixed issue..."></textarea>
             </label>
           </div>
+
+          <section class="admin-screenshot-panel" aria-labelledby="screenshot-upload-title">
+            <div class="existing-assets-heading screenshot-section-heading">
+              <div>
+                <strong id="screenshot-upload-title">Application Screenshots</strong>
+                <span>Add PNG, JPG, WEBP, or GIF screenshots. They will appear between Release Notes and Available Files on the public application details card.</span>
+              </div>
+            </div>
+
+            <div id="existing-screenshots-panel" class="existing-screenshots-panel" hidden>
+              <div class="existing-assets-heading">
+                <div><strong>Current Screenshots</strong><span>Mark a screenshot for removal, or upload an image with the same filename to replace it.</span></div>
+              </div>
+              <div id="existing-screenshots" class="existing-screenshots"></div>
+            </div>
+
+            <label class="file-drop screenshot-drop" id="screenshot-drop">
+              <input id="screenshot-files" name="screenshots" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif">
+              <span class="drop-icon" aria-hidden="true">▧</span>
+              <strong>Choose application screenshots</strong>
+              <span>or drag and drop one or more images</span>
+              <small>Recommended: PNG or JPG, landscape orientation, under 10 MB each. Screenshots carry forward to new versions.</small>
+            </label>
+            <div id="screenshot-list" class="screenshot-upload-list"></div>
+          </section>
 
           <div id="existing-assets-panel" class="existing-assets-panel" hidden>
             <div class="existing-assets-heading">
