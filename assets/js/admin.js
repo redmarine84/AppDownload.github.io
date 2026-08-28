@@ -5,6 +5,7 @@
   const API_BASE = "https://api.github.com";
   const API_VERSION = config.githubApiVersion || "2026-03-10";
   const MAX_ASSET_SIZE = 2 * 1024 * 1024 * 1024;
+  const MAX_SCREENSHOT_SIZE = 10 * 1024 * 1024;
 
   let token = "";
   let connectedUser = null;
@@ -12,6 +13,7 @@
   let selectedRelease = null;
   let releasesCache = [];
   const removedAssetIds = new Set();
+  const removedScreenshotPaths = new Set();
   const elements = {};
 
   document.addEventListener("DOMContentLoaded", init);
@@ -33,6 +35,7 @@
       "progress-percent", "progress-bar", "publish-log", "form-message", "recent-releases",
       "refresh-releases", "editor-title", "editor-subtitle", "editor-mode", "editor-mode-title",
       "editor-mode-detail", "cancel-edit", "clear-form", "existing-assets-panel", "existing-assets",
+      "screenshot-files", "screenshot-drop", "screenshot-list", "existing-screenshots-panel", "existing-screenshots",
       "management-connection-note"
     ].forEach((id) => { elements[toCamel(id)] = document.getElementById(id); });
   }
@@ -58,10 +61,12 @@
     elements.appName.addEventListener("input", autoSlug);
     elements.appSlug.addEventListener("input", normalizeSlugInput);
     elements.releaseFiles.addEventListener("change", renderFileList);
+    elements.screenshotFiles.addEventListener("change", renderScreenshotList);
     elements.refreshReleases.addEventListener("click", loadRecentReleases);
     elements.cancelEdit.addEventListener("click", () => resetEditor());
     elements.clearForm.addEventListener("click", () => resetEditor());
     elements.existingAssets.addEventListener("change", handleAssetRemovalToggle);
+    elements.existingScreenshots.addEventListener("change", handleScreenshotRemovalToggle);
     elements.recentReleases.addEventListener("click", handleReleaseAction);
 
     ["dragenter", "dragover"].forEach((type) => elements.fileDrop.addEventListener(type, (event) => {
@@ -83,6 +88,34 @@
         return;
       }
       renderFileList();
+    });
+
+    ["dragenter", "dragover"].forEach((type) => elements.screenshotDrop.addEventListener(type, (event) => {
+      event.preventDefault();
+      elements.screenshotDrop.classList.add("is-dragging");
+    }));
+
+    ["dragleave", "drop"].forEach((type) => elements.screenshotDrop.addEventListener(type, (event) => {
+      event.preventDefault();
+      elements.screenshotDrop.classList.remove("is-dragging");
+    }));
+
+    elements.screenshotDrop.addEventListener("drop", (event) => {
+      if (!event.dataTransfer.files.length) return;
+      const images = [...event.dataTransfer.files].filter(isScreenshotFile);
+      if (!images.length) {
+        setMessage("Only PNG, JPG, WEBP, and GIF files can be used as screenshots.", "error");
+        return;
+      }
+      try {
+        const transfer = new DataTransfer();
+        images.forEach((file) => transfer.items.add(file));
+        elements.screenshotFiles.files = transfer.files;
+      } catch {
+        setMessage("Your browser could not add the dropped screenshots. Use Choose application screenshots instead.", "error");
+        return;
+      }
+      renderScreenshotList();
     });
 
     window.addEventListener("beforeunload", () => {
@@ -136,8 +169,14 @@
     if (!elements.releaseForm.reportValidity()) return;
 
     const files = [...elements.releaseFiles.files];
+    const screenshotFiles = [...elements.screenshotFiles.files];
     const oversized = files.find((file) => file.size >= MAX_ASSET_SIZE);
     if (oversized) return setMessage(`${oversized.name} is too large. Each GitHub release asset must be smaller than 2 GiB.`, "error");
+
+    const invalidScreenshot = screenshotFiles.find((file) => !isScreenshotFile(file));
+    if (invalidScreenshot) return setMessage(`${invalidScreenshot.name} is not a supported screenshot format. Use PNG, JPG, WEBP, or GIF.`, "error");
+    const oversizedScreenshot = screenshotFiles.find((file) => file.size > MAX_SCREENSHOT_SIZE);
+    if (oversizedScreenshot) return setMessage(`${oversizedScreenshot.name} is larger than 10 MB. Resize or compress the screenshot first.`, "error");
 
     if (!["edit", "import"].includes(editorMode) && !files.length) {
       return setMessage("Choose at least one application file for a new release.", "error");
@@ -148,6 +187,7 @@
     resetProgress();
 
     try {
+      data.screenshots = await syncScreenshots(data.slug);
       if (["edit", "import"].includes(editorMode)) {
         await updateExistingRelease(data, files);
       } else {
@@ -381,7 +421,10 @@
       const name = managed ? (meta.appName || release.name || release.tag_name) : (release.name || release.tag_name);
       const isNewest = managed && latestBySlug.get(meta.slug)?.id === release.id;
       const visible = managed && meta.display !== false;
-      const fileCount = release.assets?.length || 0;
+      const screenshotEntries = normalizeScreenshotEntries(meta?.screenshots);
+      const legacyScreenshotNames = new Set(screenshotEntries.filter((entry) => !entry.path).map((entry) => entry.name.toLowerCase()));
+      const screenshotCount = screenshotEntries.length;
+      const fileCount = Math.max(0, (release.assets?.length || 0) - (release.assets || []).filter((asset) => legacyScreenshotNames.has(String(asset.name || "").toLowerCase())).length);
       const actionLock = connectedUser ? "" : ' disabled aria-disabled="true" title="Connect to GitHub to enable this action"';
 
       return `
@@ -400,7 +443,7 @@
             </div>
           </div>
           <div class="release-row-meta">
-            <span>${fileCount} file${fileCount === 1 ? "" : "s"}</span>
+            <span>${fileCount} file${fileCount === 1 ? "" : "s"}${screenshotCount ? ` · ${screenshotCount} screenshot${screenshotCount === 1 ? "" : "s"}` : ""}</span>
             <a href="${escapeAttribute(release.html_url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>
           </div>
           <div class="release-row-actions">
@@ -433,6 +476,7 @@
     editorMode = "edit";
     selectedRelease = release;
     removedAssetIds.clear();
+    removedScreenshotPaths.clear();
     fillEditor(meta, release);
 
     elements.editorTitle.textContent = "Edit Application";
@@ -444,8 +488,10 @@
     elements.version.disabled = true;
     elements.releaseFiles.required = false;
     elements.publishButton.textContent = "Save Changes";
-    renderExistingAssets(release.assets || []);
+    renderExistingAssets(release.assets || [], meta.screenshots);
+    renderExistingScreenshots(release.assets || [], meta.screenshots);
     clearSelectedFiles();
+    clearSelectedScreenshots();
     clearMessage();
     scrollToEditor();
   }
@@ -474,6 +520,7 @@
     editorMode = "import";
     selectedRelease = release;
     removedAssetIds.clear();
+    removedScreenshotPaths.clear();
     fillEditor(meta, release);
 
     elements.editorTitle.textContent = "Add Release to Website";
@@ -485,8 +532,10 @@
     elements.version.disabled = false;
     elements.releaseFiles.required = false;
     elements.publishButton.textContent = "Add Release to Website";
-    renderExistingAssets(release.assets || []);
+    renderExistingAssets(release.assets || [], meta.screenshots);
+    renderExistingScreenshots(release.assets || [], meta.screenshots);
     clearSelectedFiles();
+    clearSelectedScreenshots();
     clearMessage();
     scrollToEditor();
   }
@@ -499,6 +548,7 @@
     editorMode = "new-version";
     selectedRelease = release;
     removedAssetIds.clear();
+    removedScreenshotPaths.clear();
     fillEditor(meta, release);
 
     elements.version.value = "";
@@ -515,7 +565,10 @@
     elements.publishButton.textContent = "Publish New Version";
     elements.existingAssetsPanel.hidden = true;
     elements.existingAssets.innerHTML = "";
+    elements.existingScreenshotsPanel.hidden = true;
+    elements.existingScreenshots.innerHTML = "";
     clearSelectedFiles();
+    clearSelectedScreenshots();
     clearMessage();
     scrollToEditor();
     elements.version.focus();
@@ -542,6 +595,7 @@
     editorMode = "create";
     selectedRelease = null;
     removedAssetIds.clear();
+    removedScreenshotPaths.clear();
     elements.releaseForm.reset();
     elements.appSlug.disabled = false;
     elements.version.disabled = false;
@@ -556,20 +610,25 @@
     elements.publishButton.disabled = !connectedUser;
     elements.existingAssetsPanel.hidden = true;
     elements.existingAssets.innerHTML = "";
+    elements.existingScreenshotsPanel.hidden = true;
+    elements.existingScreenshots.innerHTML = "";
     elements.fileList.innerHTML = "";
+    elements.screenshotList.innerHTML = "";
     elements.publishProgress.hidden = true;
     if (!options.preserveMessage && !options.clearMessage) clearMessage();
     if (options.clearMessage) clearMessage();
   }
 
-  function renderExistingAssets(assets) {
+  function renderExistingAssets(assets, screenshotMetadata = []) {
+    const legacyScreenshotNames = new Set(normalizeScreenshotEntries(screenshotMetadata).filter((entry) => !entry.path).map((entry) => entry.name.toLowerCase()));
+    const files = assets.filter((asset) => !legacyScreenshotNames.has(String(asset.name || "").toLowerCase()));
     elements.existingAssetsPanel.hidden = false;
-    if (!assets.length) {
-      elements.existingAssets.innerHTML = '<p class="muted-text">This release has no attached files.</p>';
+    if (!files.length) {
+      elements.existingAssets.innerHTML = '<p class="muted-text">This release has no attached application files.</p>';
       return;
     }
 
-    elements.existingAssets.innerHTML = assets.map((asset) => `
+    elements.existingAssets.innerHTML = files.map((asset) => `
       <label class="existing-asset-row" data-asset-id="${asset.id}">
         <span class="file-type">${escapeHtml(fileExtension(asset.name))}</span>
         <span><strong>${escapeHtml(asset.name)}</strong><small>${formatBytes(asset.size)} · ${formatNumber(asset.download_count || 0)} downloads</small></span>
@@ -577,16 +636,57 @@
       </label>`).join("");
   }
 
+  function renderExistingScreenshots(assets, screenshotMetadata = []) {
+    const entries = normalizeScreenshotEntries(screenshotMetadata);
+    const assetByName = new Map(assets.map((asset) => [String(asset.name || "").toLowerCase(), asset]));
+    const screenshots = entries.map((entry) => {
+      if (entry.path) return { ...entry, url: screenshotPublicUrl(entry.path), size: 0 };
+      const asset = assetByName.get(entry.name.toLowerCase());
+      return asset ? { ...entry, url: asset.browser_download_url, size: asset.size || 0 } : null;
+    }).filter(Boolean);
+
+    elements.existingScreenshotsPanel.hidden = false;
+    if (!screenshots.length) {
+      elements.existingScreenshots.innerHTML = '<p class="muted-text">No screenshots are currently attached to this application.</p>';
+      return;
+    }
+
+    elements.existingScreenshots.innerHTML = screenshots.map((entry) => `
+      <label class="existing-screenshot-card">
+        <img src="${escapeAttribute(entry.url)}" alt="${escapeAttribute(entry.name)}">
+        <span class="existing-screenshot-copy"><strong>${escapeHtml(entry.name)}</strong><small>${entry.path ? "Website image" : formatBytes(entry.size)}</small></span>
+        <span class="asset-remove-control"><input type="checkbox" data-remove-screenshot="${escapeAttribute(entry.path || entry.name)}"> Remove</span>
+      </label>`).join("");
+  }
+
+  function screenshotPublicUrl(path) {
+    return encodeRepoPath(path);
+  }
+
   function handleAssetRemovalToggle(event) {
     const checkbox = event.target.closest("input[data-remove-asset]");
     if (!checkbox) return;
     const assetId = Number(checkbox.dataset.removeAsset);
-    const row = checkbox.closest(".existing-asset-row");
+    const row = checkbox.closest(".existing-asset-row, .existing-screenshot-card");
     if (checkbox.checked) {
       removedAssetIds.add(assetId);
       row?.classList.add("is-removed");
     } else {
       removedAssetIds.delete(assetId);
+      row?.classList.remove("is-removed");
+    }
+  }
+
+  function handleScreenshotRemovalToggle(event) {
+    const checkbox = event.target.closest("input[data-remove-screenshot]");
+    if (!checkbox) return;
+    const key = checkbox.dataset.removeScreenshot;
+    const row = checkbox.closest(".existing-screenshot-card");
+    if (checkbox.checked) {
+      removedScreenshotPaths.add(key);
+      row?.classList.add("is-removed");
+    } else {
+      removedScreenshotPaths.delete(key);
       row?.classList.remove("is-removed");
     }
   }
@@ -631,6 +731,111 @@
     };
   }
 
+  async function syncScreenshots(slug) {
+    const selectedFiles = [...elements.screenshotFiles.files];
+    const existingMeta = selectedRelease ? (parseMetadata(selectedRelease.body || "") || {}) : {};
+    let entries = editorMode === "create" ? [] : normalizeScreenshotEntries(existingMeta.screenshots);
+    const uploadPaths = new Set(selectedFiles.map((file) => screenshotRepoPath(slug, file.name)));
+
+    const removals = entries.filter((entry) => entry.path && removedScreenshotPaths.has(entry.path) && !uploadPaths.has(entry.path));
+    for (const entry of removals) {
+      setProgress(3, `Removing screenshot ${entry.name}...`);
+      log(`Removing screenshot ${entry.name} from the website repository...`);
+      await deleteScreenshotFromRepository(entry);
+      log(`${entry.name} removed.`, "success");
+    }
+
+    entries = entries.filter((entry) => !removedScreenshotPaths.has(entry.path || entry.name) || uploadPaths.has(entry.path));
+
+    for (let index = 0; index < selectedFiles.length; index += 1) {
+      const file = selectedFiles[index];
+      const path = screenshotRepoPath(slug, file.name);
+      const existing = entries.find((entry) => entry.path === path) || null;
+      const pct = selectedFiles.length ? Math.max(4, Math.round(((index + 1) / selectedFiles.length) * 16)) : 4;
+      setProgress(pct, `${existing ? "Replacing" : "Uploading"} screenshot ${file.name}...`);
+      log(`${existing ? "Replacing" : "Uploading"} screenshot ${file.name} in assets/screenshots/${slug}/...`);
+      const saved = await saveScreenshotToRepository(path, file, existing);
+      entries = entries.filter((entry) => entry.path !== path && entry.name.toLowerCase() !== saved.name.toLowerCase());
+      entries.push(saved);
+      log(`${saved.name} saved to the website repository.`, "success");
+    }
+
+    return entries.map((entry) => entry.path ? { name: entry.name, path: entry.path, sha: entry.sha || undefined } : entry.name);
+  }
+
+  async function saveScreenshotToRepository(path, file, existingEntry) {
+    const current = await getRepositoryFile(path);
+    const payload = {
+      message: `${current ? "Update" : "Add"} application screenshot: ${file.name}`,
+      content: await fileToBase64(file),
+      branch: config.defaultBranch || "main"
+    };
+    if (current?.sha) payload.sha = current.sha;
+
+    const result = await githubFetch(`${repoPath()}/contents/${encodeRepoPath(path)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+
+    return {
+      name: safeScreenshotFileName(file.name),
+      path,
+      sha: result?.content?.sha || current?.sha || ""
+    };
+  }
+
+  async function deleteScreenshotFromRepository(entry) {
+    if (!entry?.path) return;
+    const current = await getRepositoryFile(entry.path);
+    if (!current?.sha) return;
+    await githubFetch(`${repoPath()}/contents/${encodeRepoPath(entry.path)}`, {
+      method: "DELETE",
+      body: JSON.stringify({
+        message: `Remove application screenshot: ${entry.name}`,
+        sha: current.sha,
+        branch: config.defaultBranch || "main"
+      })
+    });
+  }
+
+  async function getRepositoryFile(path) {
+    try {
+      return await githubFetch(`${repoPath()}/contents/${encodeRepoPath(path)}?ref=${encodeURIComponent(config.defaultBranch || "main")}`);
+    } catch (error) {
+      if (error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async function fileToBase64(file) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+    }
+    return btoa(binary);
+  }
+
+  function screenshotRepoPath(slug, fileName) {
+    return `assets/screenshots/${normalizeSlug(slug)}/${safeScreenshotFileName(fileName)}`;
+  }
+
+  function safeScreenshotFileName(fileName) {
+    const raw = String(fileName || "screenshot.png").trim();
+    const dot = raw.lastIndexOf(".");
+    const ext = dot > 0 ? raw.slice(dot).toLowerCase().replace(/[^.a-z0-9]/g, "") : ".png";
+    const base = (dot > 0 ? raw.slice(0, dot) : raw)
+      .replace(/[^a-z0-9_-]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 90) || "screenshot";
+    return `${base}${ext}`;
+  }
+
+  function encodeRepoPath(path) {
+    return String(path || "").split("/").map((part) => encodeURIComponent(part)).join("/");
+  }
+
   function buildReleaseBody(data) {
     const metadata = JSON.stringify(data, null, 2);
     const requirements = data.requirements.length
@@ -658,6 +863,7 @@
       "X-GitHub-Api-Version": API_VERSION,
       ...(options.headers || {})
     };
+    if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const response = await fetch(`${API_BASE}${path}`, {
@@ -670,7 +876,9 @@
       const permissionHint = [401, 403, 404].includes(response.status)
         ? " Check the token's repository selection and Contents permission."
         : "";
-      throw new Error(`${detail.message || `GitHub returned HTTP ${response.status}`}.${permissionHint}`);
+      const error = new Error(`${detail.message || `GitHub returned HTTP ${response.status}`}.${permissionHint}`);
+      error.status = response.status;
+      throw error;
     }
     if (response.status === 204) return null;
     return response.json();
@@ -693,6 +901,62 @@
           <span>${file.size >= MAX_ASSET_SIZE ? "Too large" : replacing ? "Will replace" : "Ready"}</span>
         </div>`;
     }).join("");
+  }
+
+  function renderScreenshotList() {
+    const files = [...elements.screenshotFiles.files];
+    if (!files.length) {
+      elements.screenshotList.innerHTML = "";
+      return;
+    }
+
+    const currentMeta = selectedRelease ? (parseMetadata(selectedRelease.body || "") || {}) : {};
+    const existingNames = new Set(normalizeScreenshotEntries(currentMeta.screenshots).map((entry) => entry.name.toLowerCase()));
+    elements.screenshotList.innerHTML = files.map((file) => {
+      const valid = isScreenshotFile(file);
+      const tooLarge = file.size > MAX_SCREENSHOT_SIZE;
+      const replacing = editorMode !== "create" && existingNames.has(safeScreenshotFileName(file.name).toLowerCase());
+      const previewUrl = valid ? URL.createObjectURL(file) : "";
+      const status = !valid ? "Unsupported image" : tooLarge ? "Too large" : replacing ? "Will replace" : "Ready";
+      return `
+        <div class="screenshot-upload-row ${!valid || tooLarge ? "file-error" : ""}">
+          ${valid ? `<img src="${escapeAttribute(previewUrl)}" alt="Preview of ${escapeAttribute(file.name)}">` : '<span class="file-type">IMG</span>'}
+          <span><strong>${escapeHtml(file.name)}</strong><small>${formatBytes(file.size)}</small></span>
+          <span>${status}</span>
+        </div>`;
+    }).join("");
+  }
+
+  function clearSelectedScreenshots() {
+    elements.screenshotFiles.value = "";
+    elements.screenshotList.innerHTML = "";
+  }
+
+  function normalizeScreenshotEntries(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set();
+    const entries = [];
+    value.forEach((item) => {
+      const entry = typeof item === "string"
+        ? { name: String(item).trim(), path: "", sha: "" }
+        : {
+            name: String(item?.name || "").trim(),
+            path: String(item?.path || "").trim(),
+            sha: String(item?.sha || "").trim()
+          };
+      if (!entry.name) return;
+      const key = (entry.path || entry.name).toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      entries.push(entry);
+    });
+    return entries;
+  }
+
+  function isScreenshotFile(file) {
+    const type = String(file?.type || "").toLowerCase();
+    const name = String(file?.name || "").toLowerCase();
+    return (type.startsWith("image/") || !type) && /\.(png|jpe?g|webp|gif)$/i.test(name);
   }
 
   function clearSelectedFiles() {
